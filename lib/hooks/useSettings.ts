@@ -5,6 +5,19 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import type { PaymentReminder, Profile, UserSettings } from "@/types";
 
+export function useAuthUser() {
+  return useQuery({
+    queryKey: ["auth_user"],
+    queryFn: async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      return user;
+    },
+  });
+}
+
 export function useProfile() {
   return useQuery({
     queryKey: ["profile"],
