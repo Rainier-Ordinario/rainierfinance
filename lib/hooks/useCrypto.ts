@@ -60,6 +60,54 @@ export function useUpsertCryptoHolding() {
   });
 }
 
+export function useRefreshCryptoPrices() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (holdings: CryptoHolding[]) => {
+      if (holdings.length === 0) return 0;
+      const symbols = [...new Set(holdings.map((h) => h.symbol))];
+      const res = await fetch(
+        `/api/crypto/prices?symbols=${symbols.join(",")}`
+      );
+      if (!res.ok) throw new Error("Price lookup failed");
+      const { prices } = (await res.json()) as {
+        prices: Record<string, number | null>;
+      };
+
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in");
+
+      const priced = holdings.filter(
+        (h) => prices[h.symbol.toUpperCase()] != null
+      );
+      if (priced.length === 0)
+        throw new Error("No live prices found for your symbols");
+
+      const rows = priced.map((h) =>
+        withDerived({
+          ...h,
+          quantity: Number(h.quantity),
+          average_cost_cad: Number(h.average_cost_cad),
+          current_price_cad: prices[h.symbol.toUpperCase()] as number,
+          last_updated: new Date().toISOString(),
+          user_id: user.id,
+        })
+      );
+      const { error } = await supabase.from("crypto_holdings").upsert(rows);
+      if (error) throw error;
+      return priced.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ["crypto_holdings"] });
+      if (count > 0) toast.success(`Prices updated for ${count} holding${count === 1 ? "" : "s"}`);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
 export function useDeleteCryptoHolding() {
   const queryClient = useQueryClient();
   return useMutation({
