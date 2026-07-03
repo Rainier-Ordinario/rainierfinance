@@ -81,6 +81,67 @@ function daysFromNow(n: number): string {
   return iso(d);
 }
 
+/**
+ * Users who signed up before the migration (and its on-signup trigger) was
+ * applied have no profile/settings/categories rows — backfill them.
+ */
+async function ensureProfile(userId: string) {
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw new Error(`profiles lookup: ${error.message}`);
+  if (profile) return;
+
+  console.log("  no profile found (pre-migration signup) — backfilling");
+  {
+    const { error } = await supabase
+      .from("profiles")
+      .insert({ id: userId, currency: "CAD" });
+    if (error) throw new Error(`profiles backfill: ${error.message}`);
+  }
+  {
+    const { error } = await supabase
+      .from("user_settings")
+      .upsert({ user_id: userId });
+    if (error) throw new Error(`user_settings backfill: ${error.message}`);
+  }
+  const defaults: Array<[string, string, string, string]> = [
+    ["Groceries", "shopping-cart", "#10B981", "expense"],
+    ["Dining", "utensils", "#F59E0B", "expense"],
+    ["Food Delivery", "bike", "#F97316", "expense"],
+    ["Gas", "fuel", "#EF4444", "expense"],
+    ["Transit", "train-front", "#06B6D4", "expense"],
+    ["Rideshare", "car", "#8B5CF6", "expense"],
+    ["Streaming", "play", "#EC4899", "expense"],
+    ["Subscriptions", "repeat", "#6366F1", "expense"],
+    ["Shopping", "shopping-bag", "#F472B6", "expense"],
+    ["Bills", "receipt", "#64748B", "expense"],
+    ["Health", "heart-pulse", "#14B8A6", "expense"],
+    ["Education", "graduation-cap", "#3B82F6", "expense"],
+    ["Entertainment", "gamepad-2", "#A855F7", "expense"],
+    ["Crypto", "bitcoin", "#F7931A", "both"],
+    ["Investments", "trending-up", "#22C55E", "both"],
+    ["Income", "banknote", "#10B981", "income"],
+    ["Transfer", "arrow-left-right", "#94A3B8", "both"],
+    ["Other", "circle-ellipsis", "#9CA3AF", "both"],
+  ];
+  {
+    const { error } = await supabase.from("categories").insert(
+      defaults.map(([name, icon, color, type]) => ({
+        user_id: userId,
+        name,
+        icon,
+        color,
+        type,
+        is_default: true,
+      }))
+    );
+    if (error) throw new Error(`categories backfill: ${error.message}`);
+  }
+}
+
 async function wipe(userId: string) {
   // Dependency order: children before accounts.
   const tables = [
@@ -125,6 +186,7 @@ async function insert<T extends object>(
 async function main() {
   const userId = await resolveUserId();
   console.log(`Seeding user ${targetEmail} (${userId})`);
+  await ensureProfile(userId);
   await wipe(userId);
 
   // ---------- Accounts ----------
