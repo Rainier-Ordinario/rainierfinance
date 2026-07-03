@@ -50,3 +50,22 @@ export function useUpsertSnapshot() {
     onError: (err) => toast.error(err.message),
   });
 }
+
+export function useDeleteSnapshot() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("net_worth_snapshots")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["net_worth_snapshots"] });
+      toast.success("Snapshot deleted");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
