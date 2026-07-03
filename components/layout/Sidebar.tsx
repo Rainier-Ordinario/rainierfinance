@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ArrowLeftRight,
-  Bitcoin,
   CreditCard,
   LayoutDashboard,
   LineChart,
@@ -25,7 +24,6 @@ const NAV_ITEMS = [
   { href: "/budgets", label: "Budgets", icon: PiggyBank },
   { href: "/subscriptions", label: "Subscriptions", icon: Repeat },
   { href: "/investments", label: "Investments", icon: TrendingUp },
-  { href: "/crypto", label: "Crypto", icon: Bitcoin },
   { href: "/credit-cards", label: "Credit Cards", icon: CreditCard },
   { href: "/net-worth", label: "Net Worth", icon: LineChart },
   { href: "/chat", label: "AI Advisor", icon: MessageCircle },
