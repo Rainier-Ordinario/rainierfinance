@@ -99,6 +99,7 @@ export function UtilizationTracker({
                   tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
                   tickFormatter={(v) => formatCAD(Number(v))}
                   width={72}
+                  domain={[0, (dataMax: number) => Math.max(dataMax, target) * 1.1]}
                 />
                 <Tooltip
                   formatter={(value) => formatCAD(Number(value))}

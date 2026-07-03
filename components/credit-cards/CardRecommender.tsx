@@ -68,7 +68,7 @@ export function CardRecommender() {
             <SelectContent>
               {expenseCategories.map((c) => (
                 <SelectItem key={c.id} value={c.name}>
-                  {c.icon} {c.name}
+                  {c.name}
                 </SelectItem>
               ))}
             </SelectContent>
