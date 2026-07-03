@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { subMonths } from "date-fns";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RecapView } from "@/components/dashboard/RecapView";
 import { useAccounts } from "@/lib/hooks/useAccounts";
 import { useTransactions } from "@/lib/hooks/useTransactions";
 import { useCategories } from "@/lib/hooks/useCategories";
@@ -35,6 +37,9 @@ import { RecentTransactions } from "@/components/dashboard/RecentTransactions";
 import { InvestmentSummary } from "@/components/dashboard/InvestmentSummary";
 
 export default function DashboardPage() {
+  const [tab, setTab] = useState<"overview" | "weekly" | "monthly">(
+    "overview"
+  );
   const accounts = useAccounts();
   const transactions = useTransactions();
   const categories = useCategories();
@@ -73,30 +78,20 @@ export default function DashboardPage() {
     };
   }, [transactions.data, accounts.data, snapshots.data]);
 
-  if (loading) {
-    return (
-      <div>
-        <PageHeader title="Dashboard" />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <StatCardSkeleton key={i} />
-          ))}
-        </div>
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <CardSkeleton lines={6} />
-          <CardSkeleton lines={6} />
-        </div>
+  const overview = loading ? (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <StatCardSkeleton key={i} />
+        ))}
       </div>
-    );
-  }
-
-  return (
-    <div>
-      <PageHeader
-        title="Dashboard"
-        description="Your money at a glance"
-      />
-
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <CardSkeleton lines={6} />
+        <CardSkeleton lines={6} />
+      </div>
+    </>
+  ) : (
+    <>
       {/* Key metrics */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <NetWorthCard
@@ -139,6 +134,32 @@ export default function DashboardPage() {
           <InvestmentSummary holdings={investments.data ?? []} />
         </div>
       </div>
+    </>
+  );
+
+  return (
+    <div>
+      <PageHeader title="Dashboard" description="Your money at a glance" />
+
+      <Tabs
+        value={tab}
+        onValueChange={(v) => setTab(v as "overview" | "weekly" | "monthly")}
+        className="mb-4"
+      >
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="weekly">Weekly Recap</TabsTrigger>
+          <TabsTrigger value="monthly">Monthly Recap</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {tab === "weekly" ? (
+        <RecapView period="week" />
+      ) : tab === "monthly" ? (
+        <RecapView period="month" />
+      ) : (
+        overview
+      )}
     </div>
   );
 }

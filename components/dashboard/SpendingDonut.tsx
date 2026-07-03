@@ -24,9 +24,11 @@ const FALLBACK_COLORS = [
 export function SpendingDonut({
   data,
   categories,
+  emptyLabel = "No expenses recorded this month yet.",
 }: {
   data: CategoryTotal[];
   categories: Category[];
+  emptyLabel?: string;
 }) {
   const colorFor = (category: string, index: number) =>
     categories.find((c) => c.name === category)?.color ??
@@ -42,7 +44,7 @@ export function SpendingDonut({
       <CardContent>
         {data.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            No expenses recorded this month yet.
+            {emptyLabel}
           </p>
         ) : (
           <div className="flex flex-col items-center gap-4 sm:flex-row">

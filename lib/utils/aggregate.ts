@@ -77,12 +77,12 @@ export interface CategoryTotal {
   amount: number;
 }
 
-/** Expense totals per category for the current month, biggest first. */
-export function categoryTotals(
+/** Expense totals per category within a date range, biggest first. */
+export function categoryTotalsInRange(
   transactions: Transaction[],
-  now = new Date()
+  start: string,
+  end: string
 ): CategoryTotal[] {
-  const { start, end } = currentMonthRange(now);
   const totals = new Map<string, number>();
   for (const t of transactions) {
     if (t.type !== "expense" || !inRange(t, start, end)) continue;
@@ -94,6 +94,15 @@ export function categoryTotals(
   return [...totals.entries()]
     .map(([category, amount]) => ({ category, amount }))
     .sort((a, b) => b.amount - a.amount);
+}
+
+/** Expense totals per category for the current month, biggest first. */
+export function categoryTotals(
+  transactions: Transaction[],
+  now = new Date()
+): CategoryTotal[] {
+  const { start, end } = currentMonthRange(now);
+  return categoryTotalsInRange(transactions, start, end);
 }
 
 /** Top N categories with the remainder folded into "Other". */
