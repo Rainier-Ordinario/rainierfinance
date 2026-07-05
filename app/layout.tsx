@@ -29,10 +29,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
-      >
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${inter.variable} ${jetbrainsMono.variable}`}
+    >
+      <body className="antialiased">
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"

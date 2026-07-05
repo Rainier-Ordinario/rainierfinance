@@ -80,7 +80,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100svh-8rem)] flex-col">
+    <div className="flex h-[calc(100svh-9rem)] flex-col">
       <PageHeader
         title="AI Advisor"
         description="Ask questions about your spending, budgets, and portfolio"

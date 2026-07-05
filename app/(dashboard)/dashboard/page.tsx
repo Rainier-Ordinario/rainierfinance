@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { subMonths } from "date-fns";
+import Link from "next/link";
+import { format, subMonths } from "date-fns";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RecapView } from "@/components/dashboard/RecapView";
 import { useAccounts } from "@/lib/hooks/useAccounts";
@@ -10,7 +13,7 @@ import { useCategories } from "@/lib/hooks/useCategories";
 import { useSubscriptions } from "@/lib/hooks/useSubscriptions";
 import { useInvestments } from "@/lib/hooks/useInvestments";
 import { useSnapshots } from "@/lib/hooks/useSnapshots";
-import { usePaymentReminders } from "@/lib/hooks/useSettings";
+import { usePaymentReminders, useProfile } from "@/lib/hooks/useSettings";
 import {
   cashFlowByMonth,
   categoryTotals,
@@ -50,6 +53,13 @@ export default function DashboardPage() {
 
   const loading =
     accounts.isLoading || transactions.isLoading || categories.isLoading;
+
+  const profile = useProfile();
+  const firstName = profile.data?.full_name?.split(" ")[0];
+  const hour = new Date().getHours();
+  const timeOfDay =
+    hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
+  const greeting = `Good ${timeOfDay}${firstName ? `, ${firstName}` : ""}`;
 
   const stats = useMemo(() => {
     const txs = transactions.data ?? [];
@@ -139,7 +149,18 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" description="Your money at a glance" />
+      <PageHeader
+        title={greeting}
+        description={format(new Date(), "EEEE, MMMM d")}
+        actions={
+          <Button asChild>
+            <Link href="/transactions">
+              <Plus className="size-4" aria-hidden />
+              Add transaction
+            </Link>
+          </Button>
+        }
+      />
 
       <Tabs
         value={tab}
