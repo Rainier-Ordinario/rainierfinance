@@ -9,9 +9,17 @@ import type { ParsedCsvTransaction } from "@/types";
  * Account Type,Account Number,Transaction Date,Cheque Number,Description 1,Description 2,CAD$,USD$
  * Visa,XXXX1234,7/1/2026,,WHOLEFDS #1234,,"-82.43",
  */
+export interface RbcDetectedAccount {
+  last4: string;
+  /** Raw RBC "Account Type" value, e.g. "Visa", "Chequing", "Savings". */
+  accountType: string;
+}
+
 export interface RbcParseResult {
   transactions: ParsedCsvTransaction[];
   errors: string[];
+  /** Unique accounts found in the file (RBC exports can bundle several). */
+  detectedAccounts: RbcDetectedAccount[];
 }
 
 const RBC_HEADERS = ["Account Type", "Account Number", "Transaction Date"];
@@ -42,6 +50,7 @@ export function parseRbcCsv(csvText: string): RbcParseResult {
   const errors: string[] = papaErrors.map(
     (e) => `Row ${e.row ?? "?"}: ${e.message}`
   );
+  const detectedMap = new Map<string, RbcDetectedAccount>();
 
   data.forEach((row, i) => {
     const rawDate = row["Transaction Date"] ?? "";
@@ -64,6 +73,12 @@ export function parseRbcCsv(csvText: string): RbcParseResult {
     }
 
     const last4 = (row["Account Number"] ?? "").replace(/\D/g, "").slice(-4);
+    if (last4 && !detectedMap.has(last4)) {
+      detectedMap.set(last4, {
+        last4,
+        accountType: (row["Account Type"] ?? "").trim(),
+      });
+    }
 
     transactions.push({
       date,
@@ -75,5 +90,17 @@ export function parseRbcCsv(csvText: string): RbcParseResult {
     });
   });
 
-  return { transactions, errors };
+  return { transactions, errors, detectedAccounts: [...detectedMap.values()] };
+}
+
+/** Map RBC's "Account Type" column to our account type enum. */
+export function rbcAccountTypeToAppType(
+  raw: string
+): "chequing" | "savings" | "credit_card" {
+  const lower = raw.toLowerCase();
+  if (lower.includes("visa") || lower.includes("mastercard")) {
+    return "credit_card";
+  }
+  if (lower.includes("sav")) return "savings";
+  return "chequing";
 }

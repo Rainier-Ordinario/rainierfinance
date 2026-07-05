@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Papa from "papaparse";
 import { toast } from "sonner";
-import { FileUp, Upload } from "lucide-react";
+import { FileUp, Plus, Upload } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -28,7 +28,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { parseRbcCsv, looksLikeRbcCsv } from "@/lib/parsers/rbc-csv";
+import {
+  parseRbcCsv,
+  looksLikeRbcCsv,
+  rbcAccountTypeToAppType,
+  type RbcDetectedAccount,
+} from "@/lib/parsers/rbc-csv";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useUpsertAccount } from "@/lib/hooks/useAccounts";
 import { categorizeMerchant } from "@/lib/utils/categorize";
 import {
   detectSubscriptionCandidates,
@@ -60,9 +68,20 @@ export function CSVImporter({
   const [accountId, setAccountId] = useState<string>("");
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<SubscriptionCandidate[]>([]);
+  const [detectedAccounts, setDetectedAccounts] = useState<
+    RbcDetectedAccount[]
+  >([]);
+  const [showNewAccount, setShowNewAccount] = useState(false);
+  const [newAccount, setNewAccount] = useState({
+    name: "",
+    type: "chequing" as "chequing" | "savings" | "credit_card",
+    institution: "RBC",
+    last4: "",
+  });
 
   const importTxs = useImportTransactions();
   const upsertSubscription = useUpsertSubscription();
+  const upsertAccount = useUpsertAccount();
 
   function reset() {
     setRows([]);
@@ -71,6 +90,47 @@ export function CSVImporter({
     setNeedsMapping(false);
     setParseErrors([]);
     setCandidates([]);
+    setDetectedAccounts([]);
+    setShowNewAccount(false);
+    setAccountId("");
+  }
+
+  /** Prefill the new-account form from what the RBC file tells us. */
+  function prefillNewAccount(detected: RbcDetectedAccount | undefined) {
+    if (!detected) {
+      setNewAccount({
+        name: "",
+        type: "chequing",
+        institution: "RBC",
+        last4: "",
+      });
+      return;
+    }
+    const type = rbcAccountTypeToAppType(detected.accountType);
+    setNewAccount({
+      name: `RBC ${detected.accountType}`,
+      type,
+      institution: "RBC",
+      last4: detected.last4,
+    });
+  }
+
+  async function createAccount() {
+    if (!newAccount.name.trim()) {
+      toast.error("Give the account a name");
+      return;
+    }
+    const created = await upsertAccount.mutateAsync({
+      name: newAccount.name.trim(),
+      type: newAccount.type,
+      institution: newAccount.institution.trim() || "RBC",
+      account_number_last4: /^\d{4}$/.test(newAccount.last4)
+        ? newAccount.last4
+        : null,
+      balance: 0,
+    });
+    setAccountId(created.id);
+    setShowNewAccount(false);
   }
 
   function handleFile(file: File) {
@@ -81,16 +141,24 @@ export function CSVImporter({
       const header = (preview.data[0] ?? []).map(String);
 
       if (looksLikeRbcCsv(header)) {
-        const { transactions, errors } = parseRbcCsv(text);
+        const { transactions, errors, detectedAccounts: detected } =
+          parseRbcCsv(text);
         setRows(transactions);
         setParseErrors(errors);
+        setDetectedAccounts(detected);
         setNeedsMapping(false);
         // Auto-match account by last-4 from the file
         const last4 = transactions.find((t) => t.accountLast4)?.accountLast4;
         const matched = accounts.find(
           (a) => a.account_number_last4 && a.account_number_last4 === last4
         );
-        if (matched) setAccountId(matched.id);
+        if (matched) {
+          setAccountId(matched.id);
+        } else {
+          // No matching account yet — offer to create one from the file info
+          prefillNewAccount(detected[0]);
+          setShowNewAccount(true);
+        }
         toast.success(`Detected RBC format — ${transactions.length} rows parsed`);
       } else {
         // Unknown format: show manual column mapping
@@ -324,21 +392,142 @@ export function CSVImporter({
         ) : (
           /* Step 2b: preview + confirm */
           <div className="space-y-4">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <Badge variant="secondary">{rows.length} transactions</Badge>
-              <Select value={accountId} onValueChange={setAccountId}>
-                <SelectTrigger className="w-56" aria-label="Target account">
-                  <SelectValue placeholder="Import into account…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-2">
+                <Select value={accountId} onValueChange={setAccountId}>
+                  <SelectTrigger className="w-56" aria-label="Target account">
+                    <SelectValue
+                      placeholder={
+                        accounts.length === 0
+                          ? "No accounts yet"
+                          : "Import into account…"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                        {a.account_number_last4
+                          ? ` ····${a.account_number_last4}`
+                          : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    prefillNewAccount(detectedAccounts[0]);
+                    setShowNewAccount((v) => !v);
+                  }}
+                >
+                  <Plus className="size-3.5" aria-hidden />
+                  New account
+                </Button>
+              </div>
             </div>
+
+            {detectedAccounts.length > 1 && (
+              <p className="text-xs text-warning">
+                This file contains {detectedAccounts.length} accounts (
+                {detectedAccounts
+                  .map((d) => `${d.accountType} ····${d.last4}`)
+                  .join(", ")}
+                ). All rows import into the single account you pick — export
+                one account at a time for a clean split.
+              </p>
+            )}
+
+            {showNewAccount && (
+              <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
+                <p className="text-sm font-medium">
+                  Create the account for this file
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="import-acct-name">Account name</Label>
+                    <Input
+                      id="import-acct-name"
+                      placeholder="RBC Chequing"
+                      value={newAccount.name}
+                      onChange={(e) =>
+                        setNewAccount((a) => ({ ...a, name: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="import-acct-type">Type</Label>
+                    <Select
+                      value={newAccount.type}
+                      onValueChange={(v) =>
+                        setNewAccount((a) => ({
+                          ...a,
+                          type: v as typeof newAccount.type,
+                        }))
+                      }
+                    >
+                      <SelectTrigger
+                        id="import-acct-type"
+                        className="w-full"
+                        aria-label="Account type"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="chequing">Chequing</SelectItem>
+                        <SelectItem value="savings">Savings</SelectItem>
+                        <SelectItem value="credit_card">Credit card</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="import-acct-institution">Institution</Label>
+                    <Input
+                      id="import-acct-institution"
+                      value={newAccount.institution}
+                      onChange={(e) =>
+                        setNewAccount((a) => ({
+                          ...a,
+                          institution: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="import-acct-last4">
+                      Last 4 digits (for auto-match)
+                    </Label>
+                    <Input
+                      id="import-acct-last4"
+                      inputMode="numeric"
+                      maxLength={4}
+                      placeholder="1234"
+                      value={newAccount.last4}
+                      onChange={(e) =>
+                        setNewAccount((a) => ({
+                          ...a,
+                          last4: e.target.value.replace(/\D/g, ""),
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={createAccount}
+                  disabled={upsertAccount.isPending}
+                >
+                  {upsertAccount.isPending
+                    ? "Creating…"
+                    : "Create & select account"}
+                </Button>
+              </div>
+            )}
 
             {parseErrors.length > 0 && (
               <p className="text-xs text-warning">
