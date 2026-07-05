@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { ArrowUpDown, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import {
   Table,
@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { formatCAD } from "@/lib/utils/currency";
+import { formatCAD, formatCADSigned } from "@/lib/utils/currency";
 import { formatDate } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils";
 import { CategoryDot } from "@/components/dashboard/RecentTransactions";
@@ -61,6 +61,31 @@ export function TransactionTable({
     currentPage * PAGE_SIZE,
     (currentPage + 1) * PAGE_SIZE
   );
+
+  // Group by day when sorted by date; other sort orders show a flat list.
+  const groupByDay = sortKey === "date";
+  const dayGroups = useMemo(() => {
+    if (!groupByDay) return null;
+    // Signed day net: income adds, expenses subtract, transfers are neutral.
+    const signed = (t: Transaction) =>
+      t.type === "income"
+        ? Math.abs(Number(t.amount))
+        : t.type === "expense"
+          ? -Math.abs(Number(t.amount))
+          : 0;
+    const groups: { date: string; net: number; rows: Transaction[] }[] = [];
+    for (const t of pageRows) {
+      const last = groups[groups.length - 1];
+      if (last && last.date === t.date) {
+        last.rows.push(t);
+        last.net += signed(t);
+      } else {
+        groups.push({ date: t.date, net: signed(t), rows: [t] });
+      }
+    }
+    return groups;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupByDay, sorted, currentPage]);
 
   const accountName = (id: string) =>
     accounts.find((a) => a.id === id)?.name ?? "—";
@@ -120,6 +145,75 @@ export function TransactionTable({
     );
   }
 
+  const renderTxRow = (t: Transaction) => (
+    <TableRow
+      key={t.id}
+      data-state={selected.has(t.id) ? "selected" : undefined}
+    >
+      <TableCell>
+        <Checkbox
+          checked={selected.has(t.id)}
+          onCheckedChange={() => toggleRow(t.id)}
+          aria-label={`Select ${t.description}`}
+        />
+      </TableCell>
+      <TableCell className="text-numeric whitespace-nowrap text-sm text-muted-foreground">
+        {groupByDay ? "" : formatDate(t.date)}
+      </TableCell>
+      <TableCell>
+        <Badge variant="outline">{accountName(t.account_id)}</Badge>
+      </TableCell>
+      <TableCell className="max-w-56 truncate font-medium">
+        {t.description}
+      </TableCell>
+      <TableCell>
+        <span className="flex items-center gap-2 text-sm">
+          <CategoryDot category={t.category} categories={categories} />
+          {t.category}
+        </span>
+      </TableCell>
+      <TableCell
+        className={cn(
+          "text-numeric text-right font-medium",
+          Number(t.amount) > 0 && "text-success"
+        )}
+      >
+        {formatCAD(Number(t.amount))}
+      </TableCell>
+      <TableCell>
+        <Badge
+          variant="secondary"
+          className={cn(
+            t.type === "income" && "text-success",
+            t.type === "transfer" && "text-muted-foreground"
+          )}
+        >
+          {t.type}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex justify-end gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onEdit(t)}
+            aria-label={`Edit ${t.description}`}
+          >
+            <Pencil className="size-3.5" aria-hidden />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onDelete(t)}
+            aria-label={`Delete ${t.description}`}
+          >
+            <Trash2 className="size-3.5 text-destructive" aria-hidden />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+
   return (
     <div className="space-y-3">
       <div className="overflow-x-auto rounded-xl border">
@@ -143,71 +237,36 @@ export function TransactionTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {pageRows.map((t) => (
-              <TableRow key={t.id} data-state={selected.has(t.id) ? "selected" : undefined}>
-                <TableCell>
-                  <Checkbox
-                    checked={selected.has(t.id)}
-                    onCheckedChange={() => toggleRow(t.id)}
-                    aria-label={`Select ${t.description}`}
-                  />
-                </TableCell>
-                <TableCell className="text-numeric whitespace-nowrap text-sm text-muted-foreground">
-                  {formatDate(t.date)}
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline">{accountName(t.account_id)}</Badge>
-                </TableCell>
-                <TableCell className="max-w-56 truncate font-medium">
-                  {t.description}
-                </TableCell>
-                <TableCell>
-                  <span className="flex items-center gap-2 text-sm">
-                    <CategoryDot category={t.category} categories={categories} />
-                    {t.category}
-                  </span>
-                </TableCell>
-                <TableCell
-                  className={cn(
-                    "text-numeric text-right font-medium",
-                    Number(t.amount) > 0 && "text-success"
-                  )}
-                >
-                  {formatCAD(Number(t.amount))}
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant="secondary"
-                    className={cn(
-                      t.type === "income" && "text-success",
-                      t.type === "transfer" && "text-muted-foreground"
-                    )}
-                  >
-                    {t.type}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => onEdit(t)}
-                      aria-label={`Edit ${t.description}`}
-                    >
-                      <Pencil className="size-3.5" aria-hidden />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => onDelete(t)}
-                      aria-label={`Delete ${t.description}`}
-                    >
-                      <Trash2 className="size-3.5 text-destructive" aria-hidden />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+            {dayGroups
+              ? dayGroups.map((g) => (
+                  <Fragment key={g.date}>
+                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                      <TableCell colSpan={8} className="py-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {formatDate(g.date)}
+                            <span className="ml-2 font-normal normal-case tracking-normal">
+                              {g.rows.length} transaction
+                              {g.rows.length === 1 ? "" : "s"}
+                            </span>
+                          </span>
+                          <span
+                            className={cn(
+                              "text-numeric text-xs font-medium",
+                              g.net >= 0
+                                ? "text-success"
+                                : "text-muted-foreground"
+                            )}
+                          >
+                            {formatCADSigned(g.net)}
+                          </span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {g.rows.map(renderTxRow)}
+                  </Fragment>
+                ))
+              : pageRows.map(renderTxRow)}
           </TableBody>
         </Table>
       </div>
