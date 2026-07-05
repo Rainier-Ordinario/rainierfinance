@@ -73,18 +73,36 @@ export function useUpsertTransaction() {
   });
 }
 
+const IMPORT_CHUNK_SIZE = 250;
+
 export function useImportTransactions() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (transactions: TransactionInput[]) => {
+    mutationFn: async ({
+      transactions,
+      onProgress,
+    }: {
+      transactions: TransactionInput[];
+      /** Called with the number of rows inserted so far after each chunk. */
+      onProgress?: (inserted: number) => void;
+    }) => {
       const supabase = createClient();
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Not signed in");
       const rows = transactions.map((t) => ({ ...t, user_id: user.id }));
-      const { error } = await supabase.from("transactions").insert(rows);
-      if (error) throw error;
+      for (let i = 0; i < rows.length; i += IMPORT_CHUNK_SIZE) {
+        const { error } = await supabase
+          .from("transactions")
+          .insert(rows.slice(i, i + IMPORT_CHUNK_SIZE));
+        if (error) {
+          throw new Error(
+            `${error.message} (${i} of ${rows.length} rows were imported before the failure)`
+          );
+        }
+        onProgress?.(Math.min(i + IMPORT_CHUNK_SIZE, rows.length));
+      }
       return rows.length;
     },
     onSuccess: (count) => {

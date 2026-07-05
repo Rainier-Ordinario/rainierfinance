@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Papa from "papaparse";
 import { toast } from "sonner";
-import { FileUp, Plus, Upload } from "lucide-react";
+import { FileUp, Loader2, Plus, Upload } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -36,6 +36,7 @@ import {
 } from "@/lib/parsers/rbc-csv";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { useUpsertAccount } from "@/lib/hooks/useAccounts";
 import { categorizeMerchant } from "@/lib/utils/categorize";
 import {
@@ -222,20 +223,26 @@ export function CSVImporter({
     setNeedsMapping(false);
   }
 
+  const [importProgress, setImportProgress] = useState<number | null>(null);
+
   function confirmImport() {
     if (!accountId) {
       toast.error("Pick which account these transactions belong to");
       return;
     }
+    setImportProgress(0);
     importTxs.mutate(
-      rows.map((r) => ({
-        date: r.date,
-        description: r.description,
-        amount: r.amount,
-        category: r.category,
-        type: r.type,
-        account_id: accountId,
-      })),
+      {
+        transactions: rows.map((r) => ({
+          date: r.date,
+          description: r.description,
+          amount: r.amount,
+          category: r.category,
+          type: r.type,
+          account_id: accountId,
+        })),
+        onProgress: setImportProgress,
+      },
       {
         onSuccess: () => {
           const detected = detectSubscriptionCandidates(rows);
@@ -246,6 +253,7 @@ export function CSVImporter({
             reset();
           }
         },
+        onSettled: () => setImportProgress(null),
       }
     );
   }
@@ -262,7 +270,11 @@ export function CSVImporter({
       },
       {
         onSuccess: () =>
-          setCandidates((prev) => prev.filter((c) => c.name !== candidate.name)),
+          setCandidates((prev) =>
+            prev.filter(
+              (c) => c.name !== candidate.name || c.amount !== candidate.amount
+            )
+          ),
       }
     );
   }
@@ -271,6 +283,7 @@ export function CSVImporter({
     <Dialog
       open={open}
       onOpenChange={(o) => {
+        if (importProgress !== null) return; // don't close mid-import
         onOpenChange(o);
         if (!o) reset();
       }}
@@ -284,15 +297,36 @@ export function CSVImporter({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Step 3: subscription candidates after import */}
-        {candidates.length > 0 ? (
+        {/* Importing: progress screen */}
+        {importProgress !== null ? (
+          <div
+            className="flex flex-col items-center gap-4 py-14"
+            role="status"
+            aria-live="polite"
+          >
+            <Loader2 className="size-8 animate-spin text-primary" aria-hidden />
+            <div className="text-center">
+              <p className="text-sm font-semibold">
+                Importing your transactions…
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {Math.min(importProgress, rows.length)} of {rows.length} added
+                — keep this window open
+              </p>
+            </div>
+            <Progress
+              value={(Math.min(importProgress, rows.length) / rows.length) * 100}
+              className="h-2 w-64"
+            />
+          </div>
+        ) : candidates.length > 0 ? (
           <div className="space-y-3">
             <p className="text-sm">
               These recurring charges look like subscriptions. Add them?
             </p>
             {candidates.map((c) => (
               <div
-                key={c.name}
+                key={`${c.name}|${c.amount}`}
                 className="flex items-center justify-between rounded-lg border px-3 py-2"
               >
                 <div>

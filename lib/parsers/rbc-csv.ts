@@ -24,6 +24,10 @@ export interface RbcParseResult {
 
 const RBC_HEADERS = ["Account Type", "Account Number", "Transaction Date"];
 
+/** RBC's bilingual credit-card payment descriptions. */
+const CC_PAYMENT_RE =
+  /payment\s*-\s*thank you|paiement\s*-\s*merci|payment received/i;
+
 export function looksLikeRbcCsv(headerRow: string[]): boolean {
   return RBC_HEADERS.every((h) =>
     headerRow.some((col) => col.trim().toLowerCase() === h.toLowerCase())
@@ -80,12 +84,20 @@ export function parseRbcCsv(csvText: string): RbcParseResult {
       });
     }
 
+    // Credit-card bill payments are transfers, not income — counting them
+    // as income would inflate monthly income and savings rate.
+    const isCardPayment = CC_PAYMENT_RE.test(description);
+
     transactions.push({
       date,
       description,
       amount,
-      category: amount > 0 ? "Income" : categorizeMerchant(description),
-      type: amount > 0 ? "income" : "expense",
+      category: isCardPayment
+        ? "Transfer"
+        : amount > 0
+          ? "Income"
+          : categorizeMerchant(description),
+      type: isCardPayment ? "transfer" : amount > 0 ? "income" : "expense",
       accountLast4: last4 || undefined,
     });
   });

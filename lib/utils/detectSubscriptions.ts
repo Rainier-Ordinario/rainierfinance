@@ -27,19 +27,27 @@ export function detectSubscriptionCandidates(
     groups.set(key, [...(groups.get(key) ?? []), t]);
   }
 
-  const candidates: SubscriptionCandidate[] = [];
+  // One candidate per merchant: if several amounts recur (e.g. groceries),
+  // keep the strongest signal so the list has no duplicate names.
+  const byMerchant = new Map<string, SubscriptionCandidate>();
   for (const [key, txs] of groups) {
     if (txs.length < 2) continue;
     const [merchant, amount] = key.split("|");
     const dates = txs.map((t) => t.date).sort();
-    candidates.push({
+    const candidate: SubscriptionCandidate = {
       name: toTitleCase(merchant),
       amount: Number.parseFloat(amount),
       occurrences: txs.length,
       lastDate: dates[dates.length - 1],
-    });
+    };
+    const existing = byMerchant.get(merchant);
+    if (!existing || candidate.occurrences > existing.occurrences) {
+      byMerchant.set(merchant, candidate);
+    }
   }
-  return candidates.sort((a, b) => b.occurrences - a.occurrences);
+  return [...byMerchant.values()].sort(
+    (a, b) => b.occurrences - a.occurrences
+  );
 }
 
 function toTitleCase(value: string): string {
