@@ -42,6 +42,7 @@ export function CoinbaseImporter({
   const [holdings, setHoldings] = useState<ParsedCryptoHolding[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [rowCount, setRowCount] = useState(0);
+  const [fxNote, setFxNote] = useState<string | null>(null);
   const importHoldings = useImportCryptoHoldings();
   const refreshPrices = useRefreshCryptoPrices();
 
@@ -49,11 +50,12 @@ export function CoinbaseImporter({
     setHoldings([]);
     setErrors([]);
     setRowCount(0);
+    setFxNote(null);
   }
 
   function handleFile(file: File) {
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const text = String(reader.result);
       if (!looksLikeCoinbaseCsv(text)) {
         toast.error(
@@ -69,11 +71,41 @@ export function CoinbaseImporter({
         setErrors(result.errors);
         return;
       }
-      setHoldings(result.holdings);
+
+      let parsed = result.holdings;
+      // Coinbase exports are usually priced in USD; convert costs to CAD.
+      if (result.currency && result.currency !== "CAD") {
+        if (result.currency !== "USD") {
+          toast.error(
+            `This export is priced in ${result.currency}; only USD and CAD are supported.`
+          );
+          return;
+        }
+        try {
+          const res = await fetch("/api/crypto/prices?fx=USD");
+          const { fx } = (await res.json()) as { fx: number | null };
+          if (!res.ok || !fx) throw new Error("no rate");
+          parsed = parsed.map((h) => ({
+            ...h,
+            average_cost_cad:
+              Math.round(h.average_cost_cad * fx * 10000) / 10000,
+          }));
+          setFxNote(
+            `Costs converted from USD at today's rate (1 USD = ${fx.toFixed(4)} CAD).`
+          );
+        } catch {
+          toast.error(
+            "Couldn't fetch the USD→CAD rate — try again in a moment."
+          );
+          return;
+        }
+      }
+
+      setHoldings(parsed);
       setErrors(result.errors);
       setRowCount(result.rowCount);
       toast.success(
-        `Parsed ${result.rowCount} transactions into ${result.holdings.length} holdings`
+        `Parsed ${result.rowCount} transactions into ${parsed.length} holdings`
       );
     };
     reader.readAsText(file);
@@ -102,9 +134,10 @@ export function CoinbaseImporter({
         <DialogHeader>
           <DialogTitle>Import Coinbase transactions</DialogTitle>
           <DialogDescription>
-            Upload the transaction-history CSV from Coinbase (Statements →
-            Generate report). Your full history is summed into current
-            holdings.
+            On coinbase.com go to Profile → Statements → Transactions,
+            choose date range “All time”, and download the CSV. Your full
+            history is summed into current holdings — re-import a fresh
+            export any time to update.
           </DialogDescription>
         </DialogHeader>
 
@@ -138,6 +171,10 @@ export function CoinbaseImporter({
                 from {rowCount} transactions
               </span>
             </div>
+
+            {fxNote && (
+              <p className="text-xs text-muted-foreground">{fxNote}</p>
+            )}
 
             {errors.length > 0 && (
               <p className="text-xs text-warning">
