@@ -134,12 +134,23 @@ export default function CreditCardsPage() {
                 <p className="text-sm text-muted-foreground">
                   Combined utilization
                 </p>
-                <p
-                  className="text-numeric mt-1 text-2xl font-semibold"
-                  style={{ color: totals.utilization.color }}
-                >
-                  {formatPercent(totals.utilization.percentage)}
-                </p>
+                {cards.some((c) => Number(c.credit_limit ?? 0) > 0) ? (
+                  <p
+                    className="text-numeric mt-1 text-2xl font-semibold"
+                    style={{ color: totals.utilization.color }}
+                  >
+                    {formatPercent(totals.utilization.percentage)}
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-numeric mt-1 text-2xl font-semibold text-muted-foreground">
+                      —
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Edit a card to set its credit limit
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { CalendarClock, CheckCircle2, XCircle } from "lucide-react";
 import {
   Card,
@@ -20,8 +21,12 @@ export function UtilizationWidget({
   cards: Account[];
   reminders: PaymentReminder[];
 }) {
-  const totalBalance = cards.reduce((s, c) => s + Number(c.balance), 0);
-  const totalLimit = cards.reduce((s, c) => s + Number(c.credit_limit ?? 0), 0);
+  const withLimit = cards.filter((c) => Number(c.credit_limit ?? 0) > 0);
+  const totalBalance = withLimit.reduce((s, c) => s + Number(c.balance), 0);
+  const totalLimit = withLimit.reduce(
+    (s, c) => s + Number(c.credit_limit ?? 0),
+    0
+  );
   const combined = calculateUtilization(totalBalance, totalLimit);
 
   const reminder = reminders[0];
@@ -69,38 +74,58 @@ export function UtilizationWidget({
                         </Badge>
                       )}
                     </span>
-                    <span className="text-numeric text-muted-foreground">
-                      {formatCAD(Number(card.balance))} / {formatCAD(limit)}
-                    </span>
+                    {limit > 0 && (
+                      <span className="text-numeric text-muted-foreground">
+                        {formatCAD(Number(card.balance))} / {formatCAD(limit)}
+                      </span>
+                    )}
                   </div>
-                  <div
-                    className="h-2 overflow-hidden rounded-full bg-muted"
-                    role="progressbar"
-                    aria-valuenow={Math.round(util.percentage)}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-label={`${card.name} utilization ${formatPercent(util.percentage)}`}
-                  >
+                  {limit > 0 ? (
                     <div
-                      className="h-full rounded-full transition-all"
-                      style={{
-                        width: `${Math.min(util.percentage, 100)}%`,
-                        background: util.color,
-                      }}
-                    />
-                  </div>
+                      className="h-2 overflow-hidden rounded-full bg-muted"
+                      role="progressbar"
+                      aria-valuenow={Math.round(util.percentage)}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label={`${card.name} utilization ${formatPercent(util.percentage)}`}
+                    >
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${Math.min(util.percentage, 100)}%`,
+                          background: util.color,
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      No credit limit set —{" "}
+                      <Link
+                        href="/credit-cards"
+                        className="text-primary underline-offset-2 hover:underline"
+                      >
+                        set it up
+                      </Link>
+                    </p>
+                  )}
                 </div>
               );
             })}
 
             <div className="flex items-center justify-between border-t pt-3 text-sm">
               <span className="text-muted-foreground">Combined</span>
-              <span
-                className="text-numeric font-semibold"
-                style={{ color: combined.color }}
-              >
-                {formatPercent(combined.percentage)}
-              </span>
+              {totalLimit > 0 ? (
+                <span
+                  className="text-numeric font-semibold"
+                  style={{ color: combined.color }}
+                >
+                  {formatPercent(combined.percentage)}
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  set card limits to track
+                </span>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-sm">

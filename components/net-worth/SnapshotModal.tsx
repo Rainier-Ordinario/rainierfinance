@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useUpsertSnapshot } from "@/lib/hooks/useSnapshots";
+import { useUpsertAccount } from "@/lib/hooks/useAccounts";
 import { formatCAD } from "@/lib/utils/currency";
 import { toISODate } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,7 @@ export function SnapshotModal({
   accounts: Account[];
 }) {
   const upsert = useUpsertSnapshot();
+  const upsertAccount = useUpsertAccount();
   const active = useMemo(
     () => accounts.filter((a) => a.is_active),
     [accounts]
@@ -63,8 +65,22 @@ export function SnapshotModal({
     return { assets, liabilities, netWorth: assets - liabilities };
   }, [active, balances]);
 
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Sync edited balances back to the accounts so the live net worth,
+    // breakdown, and utilization reflect what was just entered.
+    const changed = active.filter(
+      (a) => (Number(balances[a.id] ?? 0) || 0) !== Number(a.balance)
+    );
+    for (const a of changed) {
+      await upsertAccount.mutateAsync({
+        id: a.id,
+        name: a.name,
+        type: a.type,
+        institution: a.institution,
+        balance: Number(balances[a.id] ?? 0) || 0,
+      });
+    }
     upsert.mutate(
       {
         snapshot_date: date,
@@ -151,7 +167,15 @@ export function SnapshotModal({
             </span>
           </div>
 
-          <Button type="submit" className="w-full" disabled={upsert.isPending}>
+          <p className="text-xs text-muted-foreground">
+            Saving also updates each account&apos;s current balance.
+          </p>
+
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={upsert.isPending || upsertAccount.isPending}
+          >
             Save snapshot
           </Button>
         </form>

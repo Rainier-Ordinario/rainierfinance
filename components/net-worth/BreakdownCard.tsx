@@ -122,6 +122,13 @@ export function BreakdownCard({ accounts }: { accounts: Account[] }) {
         <CardTitle className="text-base">Breakdown</CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
+        {active.length > 0 &&
+          active.every((a) => Number(a.balance) === 0) && (
+            <p className="rounded-lg bg-accent/60 px-3 py-2 text-xs text-accent-foreground">
+              Balances are empty — click the pencil beside an account, or use
+              “Log snapshot” to enter them all at once.
+            </p>
+          )}
         <div>
           <div className="mb-2 flex items-center justify-between text-sm">
             <p className="font-medium">Assets</p>
