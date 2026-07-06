@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Bitcoin, Plus, RefreshCw } from "lucide-react";
+import { Bitcoin, Plus, RefreshCw, Upload } from "lucide-react";
 import { EmptyState } from "@/components/shared/EmptyState";
 import {
   StatCardSkeleton,
@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CryptoTable } from "@/components/crypto/CryptoTable";
 import { CryptoModal } from "@/components/crypto/CryptoModal";
+import { CoinbaseImporter } from "@/components/crypto/CoinbaseImporter";
 import {
   useCryptoHoldings,
   useDeleteCryptoHolding,
@@ -36,6 +37,7 @@ import type { CryptoHolding } from "@/types";
 /** Crypto holdings panel: stats, table, CRUD, and price refresh. */
 export function CryptoSection() {
   const [modalOpen, setModalOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<CryptoHolding | null>(null);
   const [deleting, setDeleting] = useState<CryptoHolding | null>(null);
 
@@ -72,6 +74,10 @@ export function CryptoSection() {
             : "Holdings in CAD"}
         </p>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="size-4" aria-hidden />
+            Import CSV
+          </Button>
           <Button
             variant="outline"
             onClick={() => refreshPrices.mutate(all)}
@@ -175,6 +181,7 @@ export function CryptoSection() {
         onOpenChange={setModalOpen}
         editing={editing}
       />
+      <CoinbaseImporter open={importOpen} onOpenChange={setImportOpen} />
 
       <AlertDialog
         open={deleting !== null}

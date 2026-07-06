@@ -206,6 +206,8 @@ export interface ParsedHolding {
   unrealized_gain: number | null;
   unrealized_gain_pct: number | null;
   asset_type: AssetType;
+  /** Present when the export names the account (real Wealthsimple reports). */
+  account_type?: RegisteredAccountType;
 }
 
 export interface FinancialContext {

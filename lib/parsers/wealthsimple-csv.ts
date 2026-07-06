@@ -1,10 +1,18 @@
 import Papa from "papaparse";
-import type { ParsedHolding } from "@/types";
+import type { ParsedHolding, RegisteredAccountType } from "@/types";
 
 /**
- * Wealthsimple holdings export format:
- * Symbol,Security Name,Quantity,Book Value,Market Price,Market Value,Unrealized Gain/Loss
- * VFV,Vanguard S&P 500 ETF,46.8654,7820.56,186.05,8719.31,898.75
+ * Supports two Wealthsimple CSV shapes:
+ *
+ * 1. Real holdings report (app → account → Download holdings):
+ *    Account Name,Account Type,Account Classification,Account Number,Symbol,
+ *    Exchange,MIC,Name,Security Type,Quantity,Position Direction,Market Price,
+ *    Market Price Currency,Book Value (CAD),…,Market Value,…,
+ *    Market Unrealized Returns,…
+ *
+ * 2. Legacy simple export:
+ *    Symbol,Security Name,Quantity,Book Value,Market Price,Market Value,
+ *    Unrealized Gain/Loss
  */
 export interface WealthsimpleParseResult {
   holdings: ParsedHolding[];
@@ -13,13 +21,28 @@ export interface WealthsimpleParseResult {
 
 export function looksLikeWealthsimpleCsv(headerRow: string[]): boolean {
   const lower = headerRow.map((h) => h.trim().toLowerCase());
-  return lower.includes("symbol") && lower.includes("security name");
+  const hasSymbol = lower.includes("symbol");
+  const legacy = hasSymbol && lower.includes("security name");
+  const report =
+    hasSymbol &&
+    lower.includes("security type") &&
+    lower.some((h) => h.startsWith("book value"));
+  return legacy || report;
 }
 
 const KNOWN_ETFS = new Set([
   "VFV", "XEQT", "QQC", "ZEA", "VEQT", "XGRO", "VGRO", "VUN", "XUU",
   "ZSP", "VCN", "XIC", "VDY", "ZAG", "VAB", "HXQ", "XEF", "XEC",
 ]);
+
+const ACCOUNT_TYPES = new Set(["TFSA", "FHSA", "RRSP"]);
+
+function toAccountType(raw: string): RegisteredAccountType {
+  const upper = raw.trim().toUpperCase();
+  return (
+    ACCOUNT_TYPES.has(upper) ? upper : "Non-Registered"
+  ) as RegisteredAccountType;
+}
 
 function num(raw: string | undefined): number | null {
   if (raw === undefined) return null;
@@ -36,18 +59,32 @@ export function parseWealthsimpleCsv(csvText: string): WealthsimpleParseResult {
   );
 
   const holdings: ParsedHolding[] = [];
-  const errors: string[] = papaErrors.map(
-    (e) => `Row ${e.row ?? "?"}: ${e.message}`
-  );
+  // Real reports end with a quoted "As of <date>" footer — not an error.
+  const errors: string[] = papaErrors
+    .filter((e) => !/parsed 1$/.test(e.message))
+    .map((e) => `Row ${e.row ?? "?"}: ${e.message}`);
+
+  const isReportFormat =
+    data.length > 0 && data[0]["Security Type"] !== undefined;
 
   data.forEach((row, i) => {
+    // Skip footer/blank rows (only one populated cell).
+    if (Object.values(row).filter((v) => v && v.trim()).length <= 1) return;
     const symbol = (row["Symbol"] ?? "").trim().toUpperCase();
-    const name = (row["Security Name"] ?? "").trim();
+    const name = (
+      (isReportFormat ? row["Name"] : row["Security Name"]) ?? ""
+    ).trim();
     const quantity = num(row["Quantity"]);
-    const bookValue = num(row["Book Value"]);
+    const bookValue = num(
+      isReportFormat ? row["Book Value (CAD)"] : row["Book Value"]
+    );
     const marketPrice = num(row["Market Price"]);
     const marketValue = num(row["Market Value"]);
-    const gain = num(row["Unrealized Gain/Loss"]);
+    const gain = num(
+      isReportFormat
+        ? row["Market Unrealized Returns"]
+        : row["Unrealized Gain/Loss"]
+    );
 
     if (!symbol || !name || quantity === null || quantity <= 0) {
       errors.push(`Row ${i + 2}: missing symbol, name, or quantity`);
@@ -59,6 +96,15 @@ export function parseWealthsimpleCsv(csvText: string): WealthsimpleParseResult {
     const gainPct =
       gain !== null && bookValue ? (gain / bookValue) * 100 : null;
 
+    const assetType = isReportFormat
+      ? (row["Security Type"] ?? "").trim().toUpperCase() ===
+        "EXCHANGE_TRADED_FUND"
+        ? "ETF"
+        : "EQUITY"
+      : KNOWN_ETFS.has(symbol)
+        ? "ETF"
+        : "EQUITY";
+
     holdings.push({
       symbol,
       name,
@@ -69,7 +115,10 @@ export function parseWealthsimpleCsv(csvText: string): WealthsimpleParseResult {
       unrealized_gain: gain,
       unrealized_gain_pct:
         gainPct !== null ? Math.round(gainPct * 100) / 100 : null,
-      asset_type: KNOWN_ETFS.has(symbol) ? "ETF" : "EQUITY",
+      asset_type: assetType,
+      ...(isReportFormat && row["Account Type"]
+        ? { account_type: toAccountType(row["Account Type"]) }
+        : {}),
     });
   });
 

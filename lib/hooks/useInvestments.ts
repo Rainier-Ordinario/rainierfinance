@@ -64,12 +64,30 @@ export function useUpsertInvestment() {
 export function useImportInvestments() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (investments: InvestmentInput[]) => {
+    mutationFn: async ({
+      investments,
+      replaceAccountTypes,
+    }: {
+      investments: InvestmentInput[];
+      /**
+       * Holdings reports are snapshots: pass the account types covered by
+       * the file so existing positions there are replaced, not duplicated.
+       */
+      replaceAccountTypes?: string[];
+    }) => {
       const supabase = createClient();
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Not signed in");
+      if (replaceAccountTypes && replaceAccountTypes.length > 0) {
+        const { error: delError } = await supabase
+          .from("investments")
+          .delete()
+          .eq("user_id", user.id)
+          .in("account_type", replaceAccountTypes);
+        if (delError) throw delError;
+      }
       const rows = investments.map((i) => ({
         ...withDerivedFields(i),
         user_id: user.id,

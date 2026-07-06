@@ -60,10 +60,68 @@ export function useUpsertCryptoHolding() {
   });
 }
 
+/**
+ * Import aggregated holdings (e.g. from a Coinbase export): updates rows for
+ * symbols the user already tracks, inserts the rest.
+ */
+export function useImportCryptoHoldings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (
+      holdings: Pick<
+        CryptoHolding,
+        "symbol" | "name" | "quantity" | "average_cost_cad"
+      >[]
+    ) => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in");
+      const { data: existing, error: readError } = await supabase
+        .from("crypto_holdings")
+        .select("id,symbol")
+        .eq("user_id", user.id);
+      if (readError) throw readError;
+      const idBySymbol = new Map(
+        (existing ?? []).map((h) => [h.symbol.toUpperCase(), h.id])
+      );
+      const rows = holdings.map((h) => ({
+        ...(idBySymbol.has(h.symbol.toUpperCase())
+          ? { id: idBySymbol.get(h.symbol.toUpperCase()) }
+          : {}),
+        symbol: h.symbol.toUpperCase(),
+        name: h.name,
+        quantity: h.quantity,
+        average_cost_cad: h.average_cost_cad,
+        user_id: user.id,
+      }));
+      const { error } = await supabase.from("crypto_holdings").upsert(rows);
+      if (error) throw error;
+      return rows.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ["crypto_holdings"] });
+      toast.success(`Imported ${count} holding${count === 1 ? "" : "s"}`);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
 export function useRefreshCryptoPrices() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (holdings: CryptoHolding[]) => {
+    mutationFn: async (input?: CryptoHolding[]) => {
+      const supabase0 = createClient();
+      let holdings = input;
+      if (!holdings) {
+        // No list given — refresh everything the user holds.
+        const { data, error } = await supabase0
+          .from("crypto_holdings")
+          .select("*");
+        if (error) throw error;
+        holdings = (data ?? []) as CryptoHolding[];
+      }
       if (holdings.length === 0) return 0;
       const symbols = [...new Set(holdings.map((h) => h.symbol))];
       const res = await fetch(

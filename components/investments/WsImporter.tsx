@@ -69,9 +69,28 @@ export function WsImporter({
     reader.readAsText(file);
   }
 
+  // Real Wealthsimple reports name the account per row — no dropdown needed.
+  const detectedTypes = [
+    ...new Set(
+      holdings
+        .map((h) => h.account_type)
+        .filter((t): t is RegisteredAccountType => t !== undefined)
+    ),
+  ];
+  const autoDetected = detectedTypes.length > 0;
+
   function confirmImport() {
+    const rows = autoDetected
+      ? holdings.map((h) => ({
+          ...h,
+          account_type: h.account_type as RegisteredAccountType,
+        }))
+      : holdings.map((h) => ({ ...h, account_type: accountType }));
     importInvestments.mutate(
-      holdings.map((h) => ({ ...h, account_type: accountType })),
+      {
+        investments: rows,
+        replaceAccountTypes: autoDetected ? detectedTypes : [accountType],
+      },
       {
         onSuccess: () => {
           onOpenChange(false);
@@ -119,28 +138,47 @@ export function WsImporter({
           </button>
         ) : (
           <div className="space-y-4">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <Badge variant="secondary">{holdings.length} holdings</Badge>
-              <Select
-                value={accountType}
-                onValueChange={(v) =>
-                  setAccountType(v as RegisteredAccountType)
-                }
-              >
-                <SelectTrigger className="w-44" aria-label="Account type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(["TFSA", "FHSA", "RRSP", "Non-Registered"] as const).map(
-                    (t) => (
-                      <SelectItem key={t} value={t}>
-                        {t}
-                      </SelectItem>
-                    )
-                  )}
-                </SelectContent>
-              </Select>
+              {autoDetected ? (
+                <div className="flex items-center gap-1.5">
+                  {detectedTypes.map((t) => (
+                    <Badge key={t} variant="outline">
+                      {t} ·{" "}
+                      {holdings.filter((h) => h.account_type === t).length}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <Select
+                  value={accountType}
+                  onValueChange={(v) =>
+                    setAccountType(v as RegisteredAccountType)
+                  }
+                >
+                  <SelectTrigger className="w-44" aria-label="Account type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(["TFSA", "FHSA", "RRSP", "Non-Registered"] as const).map(
+                      (t) => (
+                        <SelectItem key={t} value={t}>
+                          {t}
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
+
+            {autoDetected && (
+              <p className="text-xs text-muted-foreground">
+                Account detected from the file. Importing replaces your
+                existing {detectedTypes.join(" and ")} holdings with this
+                snapshot.
+              </p>
+            )}
 
             {errors.length > 0 && (
               <p className="text-xs text-warning">
@@ -191,7 +229,8 @@ export function WsImporter({
                 disabled={importInvestments.isPending}
               >
                 <Upload className="size-4" aria-hidden />
-                Import into {accountType}
+                Import into{" "}
+                {autoDetected ? detectedTypes.join(" + ") : accountType}
               </Button>
             </div>
           </div>
