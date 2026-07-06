@@ -28,6 +28,17 @@ const RBC_HEADERS = ["Account Type", "Account Number", "Transaction Date"];
 const CC_PAYMENT_RE =
   /payment\s*-\s*thank you|paiement\s*-\s*merci|payment received/i;
 
+/**
+ * RBC wordings for moving money between your own accounts. Counting these
+ * as income/expenses double-counts every internal transfer.
+ */
+const INTERNAL_TRANSFER_RE =
+  /^online banking transfer|^online transfer (to|from) deposit account|^www transfer/i;
+
+/** Funding your own investment/crypto accounts — outflow, but not spending. */
+const INVESTMENT_FUNDING_RE =
+  /e-transfer request fulfilled coinbase|wealthsimple invest/i;
+
 export function looksLikeRbcCsv(headerRow: string[]): boolean {
   return RBC_HEADERS.every((h) =>
     headerRow.some((col) => col.trim().toLowerCase() === h.toLowerCase())
@@ -84,20 +95,31 @@ export function parseRbcCsv(csvText: string): RbcParseResult {
       });
     }
 
-    // Credit-card bill payments are transfers, not income — counting them
-    // as income would inflate monthly income and savings rate.
-    const isCardPayment = CC_PAYMENT_RE.test(description);
+    // Money moving between the user's own accounts (card payments,
+    // chequing<->savings, funding investment accounts) must be transfers —
+    // typing them income/expense double-counts every internal move.
+    const isTransfer =
+      CC_PAYMENT_RE.test(description) ||
+      INTERNAL_TRANSFER_RE.test(description);
+    const isInvestmentFunding = INVESTMENT_FUNDING_RE.test(description);
 
     transactions.push({
       date,
       description,
       amount,
-      category: isCardPayment
+      category: isTransfer
         ? "Transfer"
-        : amount > 0
-          ? "Income"
-          : categorizeMerchant(description),
-      type: isCardPayment ? "transfer" : amount > 0 ? "income" : "expense",
+        : isInvestmentFunding
+          ? "Investments"
+          : amount > 0
+            ? "Income"
+            : categorizeMerchant(description),
+      type:
+        isTransfer || isInvestmentFunding
+          ? "transfer"
+          : amount > 0
+            ? "income"
+            : "expense",
       accountLast4: last4 || undefined,
     });
   });
