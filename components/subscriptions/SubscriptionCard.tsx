@@ -87,7 +87,7 @@ export function SubscriptionCard({
                     days <= 3 ? "text-warning" : "text-foreground"
                   )}
                 >
-                  ({days <= 0 ? "today" : `${days}d`})
+                  ({days < 0 ? "overdue" : days === 0 ? "today" : `${days}d`})
                 </span>
               </>
             ) : (

@@ -41,14 +41,21 @@ export async function sendChatMessage(
   } = await supabase.auth.getSession();
   if (!session) throw new Error("Not signed in");
 
-  const res = await fetch(`${API_URL}/chat`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({ message }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ message }),
+    });
+  } catch {
+    throw new Error(
+      "The advisor service isn't running. Start it with: cd api && uvicorn main:app --port 8000"
+    );
+  }
   if (!res.ok || !res.body) {
     let detail = `Advisor request failed (${res.status})`;
     try {

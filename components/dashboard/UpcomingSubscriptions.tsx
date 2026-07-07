@@ -89,7 +89,7 @@ export function UpcomingSubscriptions({
                       variant={days <= 3 ? "destructive" : "secondary"}
                       className="mt-0.5"
                     >
-                      {days <= 0 ? "today" : `in ${days}d`}
+                      {days < 0 ? "overdue" : days === 0 ? "today" : `in ${days}d`}
                     </Badge>
                   </div>
                 </li>
