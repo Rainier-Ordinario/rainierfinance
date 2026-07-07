@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { format, parseISO } from "date-fns";
 import { formatCAD, formatCADSigned } from "@/lib/utils/currency";
 import { formatDate } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils";
@@ -73,7 +74,13 @@ export function TransactionTable({
         : t.type === "expense"
           ? -Math.abs(Number(t.amount))
           : 0;
-    const groups: { date: string; net: number; rows: Transaction[] }[] = [];
+    const groups: {
+      date: string;
+      net: number;
+      rows: Transaction[];
+      /** Set on the first group of each month visible on this page. */
+      monthHeader?: { label: string; income: number; expenses: number };
+    }[] = [];
     for (const t of pageRows) {
       const last = groups[groups.length - 1];
       if (last && last.date === t.date) {
@@ -82,6 +89,23 @@ export function TransactionTable({
       } else {
         groups.push({ date: t.date, net: signed(t), rows: [t] });
       }
+    }
+    // Month separators with in/out sums for the month's rows on this page.
+    let currentMonth = "";
+    for (const g of groups) {
+      const month = g.date.slice(0, 7);
+      if (month === currentMonth) continue;
+      currentMonth = month;
+      const monthRows = pageRows.filter((t) => t.date.slice(0, 7) === month);
+      g.monthHeader = {
+        label: format(parseISO(`${month}-01`), "MMMM yyyy"),
+        income: monthRows
+          .filter((t) => t.type === "income")
+          .reduce((s, t) => s + Math.abs(Number(t.amount)), 0),
+        expenses: monthRows
+          .filter((t) => t.type === "expense")
+          .reduce((s, t) => s + Math.abs(Number(t.amount)), 0),
+      };
     }
     return groups;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -240,6 +264,28 @@ export function TransactionTable({
             {dayGroups
               ? dayGroups.map((g) => (
                   <Fragment key={g.date}>
+                    {g.monthHeader && (
+                      <TableRow className="bg-accent/50 hover:bg-accent/50">
+                        <TableCell colSpan={8} className="py-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-bold tracking-[-0.01em]">
+                              {g.monthHeader.label}
+                            </span>
+                            <span className="text-numeric text-xs">
+                              <span className="text-success">
+                                in {formatCAD(g.monthHeader.income)}
+                              </span>
+                              <span className="mx-1.5 text-muted-foreground">
+                                ·
+                              </span>
+                              <span className="text-muted-foreground">
+                                out {formatCAD(g.monthHeader.expenses)}
+                              </span>
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
                     <TableRow className="bg-muted/40 hover:bg-muted/40">
                       <TableCell colSpan={8} className="py-2">
                         <div className="flex items-center justify-between">

@@ -1,10 +1,42 @@
 "use client";
 
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer } from "recharts";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatCAD, formatPercent } from "@/lib/utils/currency";
 import type { MonthCashFlow } from "@/lib/utils/aggregate";
 import { cn } from "@/lib/utils";
+
+function HistoryLink({
+  href,
+  ariaLabel,
+  children,
+}: {
+  href: string;
+  ariaLabel: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link href={href} aria-label={ariaLabel} className="group block">
+      <Card className="transition-all group-hover:-translate-y-0.5 group-hover:ring-primary/40">
+        {children}
+      </Card>
+    </Link>
+  );
+}
+
+function ViewHistoryHint({ label }: { label: string }) {
+  return (
+    <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground transition-colors group-hover:text-primary">
+      {label}
+      <ArrowRight
+        className="size-3 transition-transform group-hover:translate-x-0.5"
+        aria-hidden
+      />
+    </p>
+  );
+}
 
 export function MonthlySpendingCard({
   amount,
@@ -14,7 +46,10 @@ export function MonthlySpendingCard({
   history: MonthCashFlow[];
 }) {
   return (
-    <Card>
+    <HistoryLink
+      href="/transactions?type=expense"
+      ariaLabel="Monthly spending — view spending history"
+    >
       <CardContent className="pt-6">
         <p className="text-sm font-medium text-muted-foreground">
           Monthly Spending
@@ -36,15 +71,24 @@ export function MonthlySpendingCard({
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">Last 6 months</p>
+        <ViewHistoryHint label="View spending history" />
       </CardContent>
-    </Card>
+    </HistoryLink>
   );
 }
 
-export function MonthlyIncomeCard({ amount }: { amount: number }) {
+export function MonthlyIncomeCard({
+  amount,
+  history,
+}: {
+  amount: number;
+  history: MonthCashFlow[];
+}) {
   return (
-    <Card>
+    <HistoryLink
+      href="/transactions?type=income"
+      ariaLabel="Monthly income — view income history"
+    >
       <CardContent className="pt-6">
         <p className="text-sm font-medium text-muted-foreground">
           Monthly Income
@@ -52,9 +96,23 @@ export function MonthlyIncomeCard({ amount }: { amount: number }) {
         <p className="text-numeric mt-1 text-3xl font-semibold text-success">
           {formatCAD(amount)}
         </p>
-        <p className="mt-2 text-xs text-muted-foreground">This month so far</p>
+        <div className="mt-2 h-8" aria-hidden>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={history}>
+              <Line
+                type="monotone"
+                dataKey="income"
+                stroke="var(--success)"
+                strokeWidth={2}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <ViewHistoryHint label="View income history" />
       </CardContent>
-    </Card>
+    </HistoryLink>
   );
 }
 

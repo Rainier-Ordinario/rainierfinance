@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowLeftRight,
   Download,
@@ -32,10 +33,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TransactionTable } from "@/components/transactions/TransactionTable";
 import { TransactionModal } from "@/components/transactions/TransactionModal";
 import { FilterPanel } from "@/components/transactions/FilterPanel";
 import { CSVImporter } from "@/components/transactions/CSVImporter";
+import { TrendPanel } from "@/components/transactions/TrendPanel";
 import {
   useBulkCategorize,
   useDeleteTransactions,
@@ -45,10 +48,25 @@ import {
 import { useAccounts } from "@/lib/hooks/useAccounts";
 import { useCategories } from "@/lib/hooks/useCategories";
 import { downloadCsv } from "@/lib/utils/exportCsv";
-import type { Transaction } from "@/types";
+import type { Transaction, TransactionType } from "@/types";
 
-export default function TransactionsPage() {
-  const [filters, setFilters] = useState<TransactionFilters>({});
+const TYPE_TABS = [
+  { value: "all", label: "All" },
+  { value: "income", label: "Income" },
+  { value: "expense", label: "Spending" },
+  { value: "transfer", label: "Transfers" },
+] as const;
+
+function TransactionsContent() {
+  const searchParams = useSearchParams();
+  const initialType = searchParams.get("type");
+  const [filters, setFilters] = useState<TransactionFilters>(() =>
+    initialType === "income" ||
+    initialType === "expense" ||
+    initialType === "transfer"
+      ? { type: initialType }
+      : {}
+  );
   const [showFilters, setShowFilters] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -111,6 +129,25 @@ export default function TransactionsPage() {
           </>
         }
       />
+
+      <Tabs
+        value={filters.type ?? "all"}
+        onValueChange={(v) =>
+          setFilters((f) => ({
+            ...f,
+            type: v === "all" ? undefined : (v as TransactionType),
+          }))
+        }
+        className="mb-4"
+      >
+        <TabsList>
+          {TYPE_TABS.map((t) => (
+            <TabsTrigger key={t.value} value={t.value}>
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input
@@ -179,6 +216,9 @@ export default function TransactionsPage() {
         )}
 
         <div className="min-w-0 flex-1">
+          {!transactions.isLoading && rows.length > 0 && (
+            <TrendPanel transactions={rows} type={filters.type} />
+          )}
           {transactions.isLoading ? (
             <TableSkeleton />
           ) : rows.length === 0 ? (
@@ -279,5 +319,13 @@ export default function TransactionsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+export default function TransactionsPage() {
+  return (
+    <Suspense fallback={null}>
+      <TransactionsContent />
+    </Suspense>
   );
 }

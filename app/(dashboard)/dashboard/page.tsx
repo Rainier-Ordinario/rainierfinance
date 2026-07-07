@@ -109,7 +109,7 @@ export default function DashboardPage() {
           lastMonthNetWorth={stats.lastMonthNetWorth}
         />
         <MonthlySpendingCard amount={stats.expenses} history={stats.cashFlow} />
-        <MonthlyIncomeCard amount={stats.income} />
+        <MonthlyIncomeCard amount={stats.income} history={stats.cashFlow} />
         <SavingsRateCard rate={stats.savingsRate} />
       </div>
 

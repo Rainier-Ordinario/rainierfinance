@@ -1,5 +1,7 @@
+import { addDays, format, startOfWeek, subWeeks } from "date-fns";
 import type { Account, Transaction } from "@/types";
 import { currentMonthRange, monthRange } from "@/lib/utils/dates";
+import { toISODate } from "@/lib/utils/dates";
 
 const LIABILITY_TYPES = new Set(["credit_card"]);
 
@@ -67,6 +69,26 @@ export function cashFlowByMonth(
       label,
       income: monthlyIncome(transactions, start, end),
       expenses: monthlyExpenses(transactions, start, end),
+    });
+  }
+  return result;
+}
+
+/** Income vs expenses for the last `weeks` Monday-based weeks, oldest first. */
+export function cashFlowByWeek(
+  transactions: Transaction[],
+  weeks = 12,
+  now = new Date()
+): MonthCashFlow[] {
+  const result: MonthCashFlow[] = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const start = startOfWeek(subWeeks(now, i), { weekStartsOn: 1 });
+    const startIso = toISODate(start);
+    const endIso = toISODate(addDays(start, 6));
+    result.push({
+      label: format(start, "MMM d"),
+      income: monthlyIncome(transactions, startIso, endIso),
+      expenses: monthlyExpenses(transactions, startIso, endIso),
     });
   }
   return result;
