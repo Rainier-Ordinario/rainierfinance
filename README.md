@@ -1,39 +1,105 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# RainierFinance
 
-## Getting Started
+A full-stack personal finance dashboard that turns raw bank, brokerage, and crypto exports into one clear picture of where your money goes — with an AI advisor that answers questions about **your** actual numbers.
 
-First, run the development server:
+Built for the Canadian banking stack I use every day (RBC, Wealthsimple, Coinbase), in CAD.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+![Dashboard](docs/screenshots/DashboardScreenshot.png)
+![Transactions](docs/screenshots/TransactionsScreenshot.png)
+
+## Features
+
+- **CSV import for real bank exports** — parsers for RBC (chequing + Visa), Wealthsimple holdings reports, and Coinbase transaction history, with duplicate detection so re-importing the same file never double-counts.
+- **Automatic categorization** — a rule-based merchant categorizer, plus detection of internal transfers so moving money between accounts isn't counted as spending.
+- **Subscription detection** — flags recurring charges (same merchant, same amount) and tracks upcoming billing dates.
+- **Budgets** — weekly, monthly, and yearly budgets with spending computed live from transactions.
+- **Investments & crypto** — holdings, allocation charts, a portfolio health grade (single-stock concentration, overlapping ETFs), and live crypto prices converted to CAD.
+- **Credit cards** — utilization tracking, payment schedule, and a "which card should I use?" recommender per spending category.
+- **Net worth** — snapshots over time with an asset/liability breakdown.
+- **Weekly & monthly recap** — budget progress, subscriptions charged, biggest transactions, and net worth change for the period.
+- **AI Advisor** — a chat assistant powered by Claude that is grounded in the signed-in user's own transactions, budgets, and holdings, with streamed responses.
+
+## Tech Stack
+
+| Layer | Tools |
+|---|---|
+| Frontend | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS 4, shadcn/ui, Recharts |
+| Data fetching & state | TanStack Query, Zustand, React Hook Form + Zod |
+| Backend & database | Supabase (PostgreSQL, Auth, Row-Level Security) |
+| AI service | Python, FastAPI, Anthropic Claude API |
+| Testing | Vitest |
+
+## Architecture
+
+```
+Browser (Next.js app)
+  ├── Supabase  ── Postgres + Auth; Row-Level Security on every table
+  ├── /api/crypto/prices  ── Next.js route, authenticated proxy to Coinbase public prices
+  └── FastAPI service (api/)  ── AI Advisor
+        ├── verifies the user's Supabase JWT
+        ├── loads that user's financial data server-side
+        └── streams a Claude response grounded in it
 ```
 
-cd api && .venv/bin/uvicorn main:app --port 8000
+Each feature follows the same path: **page** (`app/`) → **components** (`components/`) → **data hook** (`lib/hooks/`) → **Supabase**. Pure business logic — CSV parsers, categorization, budgets, subscription detection — lives in `lib/` with unit tests alongside it.
 
+### Security decisions
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **Row-Level Security** on all 12 tables — users can only ever read or write their own rows, enforced by the database rather than application code.
+- **API keys stay server-side** — the Anthropic key and Supabase service-role key exist only in the Python service; the browser never sees them.
+- **Authenticated endpoints** — the AI service and the price proxy both reject unauthenticated requests, and chat is rate-limited per user.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+app/            Pages and routes (one folder per page)
+components/     UI, grouped by feature (transactions/, budgets/, ...)
+lib/hooks/      Data access — all Supabase reads/writes
+lib/parsers/    RBC, Wealthsimple, and Coinbase CSV parsers
+lib/utils/      Business logic: categorization, budgets, dates, aggregation
+api/            Python FastAPI service for the AI Advisor
+supabase/       Database migrations
+scripts/        Seed and reset scripts for local development
+```
 
-## Learn More
+## Running Locally
 
-To learn more about Next.js, take a look at the following resources:
+**Prerequisites:** Node.js 20+, Python 3.11+, a [Supabase](https://supabase.com) project, and an [Anthropic API key](https://console.anthropic.com) (only needed for the AI Advisor).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Install dependencies**
+   ```bash
+   npm install
+   cd api && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && cd ..
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+2. **Set up the database** — run the SQL files in `supabase/migrations/` in order in your Supabase project's SQL editor.
 
-## Deploy on Vercel
+3. **Add environment variables** — create `.env.local` in the project root:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=
+   SUPABASE_SERVICE_ROLE_KEY=
+   ANTHROPIC_API_KEY=
+   ANTHROPIC_MODEL=
+   NEXT_PUBLIC_PYTHON_API_URL=http://localhost:8000
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+4. **Seed demo data** (optional) — creates a dev user with realistic sample transactions:
+   ```bash
+   npm run seed
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+5. **Start both servers**
+   ```bash
+   npm run dev
+   cd api && .venv/bin/uvicorn main:app --port 8000
+   ```
+   Then open [http://localhost:3000](http://localhost:3000).
+
+## Tests
+
+```bash
+npm test
+```
+
+61 unit tests cover the CSV parsers, budget math, date handling, aggregation, and subscription detection.

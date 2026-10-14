@@ -45,3 +45,7 @@ next-env.d.ts
 api/.venv/
 __pycache__/
 *.pyc
+
+# AI coding tool files
+.agents/
+skills-lock.json
