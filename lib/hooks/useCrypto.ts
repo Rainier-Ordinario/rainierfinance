@@ -156,10 +156,36 @@ export function useRefreshCryptoPrices() {
       );
       const { error } = await supabase.from("crypto_holdings").upsert(rows);
       if (error) throw error;
+
+      // Keep the crypto account's balance in step with the live valuation so
+      // Net Worth doesn't show a different number than this page. Only safe
+      // to attribute when there's exactly one active crypto account.
+      const { data: freshHoldings } = await supabase
+        .from("crypto_holdings")
+        .select("market_value_cad")
+        .eq("user_id", user.id);
+      const { data: cryptoAccounts } = await supabase
+        .from("accounts")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("type", "crypto")
+        .eq("is_active", true);
+      if (freshHoldings && cryptoAccounts?.length === 1) {
+        const total = freshHoldings.reduce(
+          (s, h) => s + Number(h.market_value_cad ?? 0),
+          0
+        );
+        await supabase
+          .from("accounts")
+          .update({ balance: Math.round(total * 100) / 100 })
+          .eq("id", cryptoAccounts[0].id);
+      }
+
       return priced.length;
     },
     onSuccess: (count) => {
       queryClient.invalidateQueries({ queryKey: ["crypto_holdings"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
       if (count > 0) toast.success(`Prices updated for ${count} holding${count === 1 ? "" : "s"}`);
     },
     onError: (err) => toast.error(err.message),

@@ -13,7 +13,11 @@ import { useCategories } from "@/lib/hooks/useCategories";
 import { useSubscriptions } from "@/lib/hooks/useSubscriptions";
 import { useInvestments } from "@/lib/hooks/useInvestments";
 import { useSnapshots } from "@/lib/hooks/useSnapshots";
-import { usePaymentReminders, useProfile } from "@/lib/hooks/useSettings";
+import {
+  usePaymentReminders,
+  useProfile,
+  useAuthUser,
+} from "@/lib/hooks/useSettings";
 import {
   cashFlowByMonth,
   categoryTotals,
@@ -38,6 +42,7 @@ import { UtilizationWidget } from "@/components/dashboard/UtilizationWidget";
 import { UpcomingSubscriptions } from "@/components/dashboard/UpcomingSubscriptions";
 import { RecentTransactions } from "@/components/dashboard/RecentTransactions";
 import { InvestmentSummary } from "@/components/dashboard/InvestmentSummary";
+import { GettingStarted } from "@/components/dashboard/GettingStarted";
 
 export default function DashboardPage() {
   const [tab, setTab] = useState<"overview" | "weekly" | "monthly">(
@@ -55,7 +60,13 @@ export default function DashboardPage() {
     accounts.isLoading || transactions.isLoading || categories.isLoading;
 
   const profile = useProfile();
-  const firstName = profile.data?.full_name?.split(" ")[0];
+  const authUser = useAuthUser();
+  // Session metadata resolves locally, so the name paints without waiting
+  // for the profiles-table query.
+  const fullName =
+    profile.data?.full_name ??
+    (authUser.data?.user_metadata?.full_name as string | undefined);
+  const firstName = fullName?.split(" ")[0];
   const hour = new Date().getHours();
   const timeOfDay =
     hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
@@ -102,6 +113,9 @@ export default function DashboardPage() {
     </>
   ) : (
     <>
+      {(accounts.data ?? []).length === 0 &&
+        (transactions.data ?? []).length === 0 && <GettingStarted />}
+
       {/* Key metrics */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <NetWorthCard
@@ -175,9 +189,10 @@ export default function DashboardPage() {
       </Tabs>
 
       {tab === "weekly" ? (
-        <RecapView period="week" />
+        // key forces a remount so period-dependent date state resets
+        <RecapView key="week" period="week" />
       ) : tab === "monthly" ? (
-        <RecapView period="month" />
+        <RecapView key="month" period="month" />
       ) : (
         overview
       )}

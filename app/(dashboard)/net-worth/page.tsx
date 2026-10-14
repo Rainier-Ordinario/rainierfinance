@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { SnapshotModal } from "@/components/net-worth/SnapshotModal";
+import { AccountModal } from "@/components/accounts/AccountModal";
 import { NetWorthChart } from "@/components/net-worth/NetWorthChart";
 import { BreakdownCard } from "@/components/net-worth/BreakdownCard";
 import { SnapshotTable } from "@/components/net-worth/SnapshotTable";
@@ -33,6 +34,7 @@ import type { NetWorthSnapshot } from "@/types";
 
 export default function NetWorthPage() {
   const [modalOpen, setModalOpen] = useState(false);
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [deleting, setDeleting] = useState<NetWorthSnapshot | null>(null);
 
   const accounts = useAccounts();
@@ -74,11 +76,19 @@ export default function NetWorthPage() {
           <CardSkeleton lines={6} />
         </>
       ) : active.length === 0 ? (
-        <EmptyState
-          icon={LineChart}
-          title="No accounts yet"
-          description="Add your accounts first — net worth is computed from their balances."
-        />
+        <>
+          <EmptyState
+            icon={LineChart}
+            title="No accounts yet"
+            description="Add your accounts first — net worth is computed from their balances."
+            actionLabel="Add account"
+            onAction={() => setAccountModalOpen(true)}
+          />
+          <AccountModal
+            open={accountModalOpen}
+            onOpenChange={setAccountModalOpen}
+          />
+        </>
       ) : (
         <>
           <div className="mb-4 grid gap-4 sm:grid-cols-3">
@@ -97,8 +107,8 @@ export default function NetWorthPage() {
                       changeSinceLast >= 0 ? "text-success" : "text-destructive"
                     )}
                   >
-                    {formatCADSigned(changeSinceLast)} since{" "}
-                    {formatDateShort(latest.snapshot_date)}
+                    {formatCADSigned(changeSinceLast)} vs last snapshot (
+                    {formatDateShort(latest.snapshot_date)})
                   </p>
                 )}
               </CardContent>

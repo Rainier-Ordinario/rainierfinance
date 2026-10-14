@@ -10,10 +10,12 @@ export function useAuthUser() {
     queryKey: ["auth_user"],
     queryFn: async () => {
       const supabase = createClient();
+      // getSession reads locally (no auth-server round trip), so consumers
+      // like the greeting get user_metadata without waiting on the network.
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      return user;
+        data: { session },
+      } = await supabase.auth.getSession();
+      return session?.user ?? null;
     },
   });
 }
@@ -24,8 +26,9 @@ export function useProfile() {
     queryFn: async (): Promise<Profile | null> => {
       const supabase = createClient();
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return null;
       const { data, error } = await supabase
         .from("profiles")
@@ -95,6 +98,46 @@ export function useUpdateUserSettings() {
       toast.success("Settings saved");
     },
     onError: (err) => toast.error(err.message),
+  });
+}
+
+/**
+ * Add a normalized merchant key to the user's dismissed-recurring list.
+ * Quiet on success (the row just disappears); explains the missing-column
+ * case if migration 002 hasn't been applied.
+ */
+export function useDismissRecurring() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (key: string) => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in");
+      const { data: existing } = await supabase
+        .from("user_settings")
+        .select("dismissed_recurring")
+        .maybeSingle();
+      const current = (existing?.dismissed_recurring as string[] | null) ?? [];
+      const { error } = await supabase.from("user_settings").upsert({
+        user_id: user.id,
+        dismissed_recurring: [...new Set([...current, key])],
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user_settings"] });
+    },
+    onError: (err) => {
+      if (/dismissed_recurring/.test(err.message)) {
+        toast.error(
+          "Dismissing needs a quick database update — run migration 002."
+        );
+      } else {
+        toast.error(err.message);
+      }
+    },
   });
 }
 

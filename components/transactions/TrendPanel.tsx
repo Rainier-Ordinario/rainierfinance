@@ -85,6 +85,12 @@ export function TrendPanel({
       ? (series.delta ?? 0) <= 0
       : (series.delta ?? 0) >= 0;
 
+  // When no type filter is active the metric is net flow (income − spending),
+  // not a spending total — label it so it can't be misread.
+  const metricLabel = focus === "both" ? "Net" : "This";
+  const metricHint =
+    focus === "both" ? "income − spending" : undefined;
+
   return (
     <Card className="mb-4">
       <CardHeader className="flex-row items-center justify-between">
@@ -103,7 +109,14 @@ export function TrendPanel({
         {/* Summary strip */}
         <div className="mb-4 flex flex-wrap items-baseline gap-x-8 gap-y-2">
           <div>
-            <p className="text-xs text-muted-foreground">This {periodNoun}</p>
+            <p className="text-xs text-muted-foreground">
+              {metricLabel} {periodNoun}
+              {metricHint && (
+                <span className="ml-1 text-muted-foreground/70">
+                  ({metricHint})
+                </span>
+              )}
+            </p>
             <p className="text-numeric text-xl font-semibold">
               {formatCAD(series.current)}
             </p>

@@ -17,6 +17,7 @@ import {
   CardSkeleton,
   StatCardSkeleton,
 } from "@/components/shared/CardSkeleton";
+import { CategoryIcon } from "@/components/shared/CategoryIcon";
 import { SpendingDonut } from "@/components/dashboard/SpendingDonut";
 import {
   useMonthlyRecap,
@@ -31,9 +32,15 @@ import {
   formatCAD,
   formatCADSigned,
   formatPercentSigned,
+  formatTransactionAmount,
 } from "@/lib/utils/currency";
-import { formatDateShort, toISODate } from "@/lib/utils/dates";
+import {
+  formatDateShort,
+  formatDayHeading,
+  toISODate,
+} from "@/lib/utils/dates";
 import { cn } from "@/lib/utils";
+import type { Transaction } from "@/types";
 
 type Period = "week" | "month";
 
@@ -133,6 +140,25 @@ export function RecapView({ period }: { period: Period }) {
       });
   }, [recap.data, budgets.data, transactions.data]);
 
+  // Every transaction in the period, grouped by day in chronological order.
+  // Each day carries its spending (expense) subtotal; empty days are omitted.
+  const dayGroups = useMemo(() => {
+    if (!recap.data) return [];
+    const byDay = new Map<string, Transaction[]>();
+    for (const t of recap.data.transactions) {
+      byDay.set(t.date, [...(byDay.get(t.date) ?? []), t]);
+    }
+    return [...byDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, txs]) => ({
+        date,
+        txs,
+        spent: txs
+          .filter((t) => t.type === "expense")
+          .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0),
+      }));
+  }, [recap.data]);
+
   const data: PeriodRecap | undefined = recap.data;
 
   return (
@@ -218,12 +244,19 @@ export function RecapView({ period }: { period: Period }) {
                 <p className="text-numeric mt-1 text-2xl font-semibold text-success">
                   {formatCAD(data.income)}
                 </p>
-                <DeltaLine
-                  current={data.income}
-                  previous={data.prevIncome}
-                  downIsGood={false}
-                  label={config.prevLabel}
-                />
+                {data.income === 0 ? (
+                  // A no-payday week isn't a 100% income crash — keep it calm.
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    No income recorded this {config.noun}
+                  </p>
+                ) : (
+                  <DeltaLine
+                    current={data.income}
+                    previous={data.prevIncome}
+                    downIsGood={false}
+                    label={config.prevLabel}
+                  />
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -377,6 +410,62 @@ export function RecapView({ period }: { period: Period }) {
                   </li>
                 ))}
               </ul>
+            </CardContent>
+          </Card>
+
+          {/* Full transaction list for the period, grouped by day */}
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle>
+                All transactions this {config.noun}
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  {data.transactions.length}
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {dayGroups.map((day) => (
+                <div key={day.date}>
+                  <div className="flex items-baseline justify-between border-b pb-2">
+                    <span className="text-sm font-medium">
+                      {formatDayHeading(day.date)}
+                    </span>
+                    <span className="text-numeric text-xs text-muted-foreground">
+                      {formatCAD(day.spent)} spent
+                    </span>
+                  </div>
+                  <ul className="divide-y">
+                    {day.txs.map((t) => (
+                      <li
+                        key={t.id}
+                        className="flex items-center gap-3 py-2 text-sm"
+                      >
+                        <CategoryIcon
+                          category={t.category}
+                          categories={categories.data ?? []}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">
+                            {t.description}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {t.category}
+                          </span>
+                        </span>
+                        <span
+                          className={cn(
+                            "text-numeric shrink-0",
+                            t.type === "income" && "text-success",
+                            t.type === "transfer" && "text-muted-foreground"
+                          )}
+                        >
+                          {formatTransactionAmount(Number(t.amount), t.type)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </CardContent>
           </Card>
         </>

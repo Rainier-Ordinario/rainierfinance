@@ -16,7 +16,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { formatCAD } from "@/lib/utils/currency";
+import { WidgetEmpty } from "@/components/shared/WidgetEmpty";
+import { formatTransactionAmount } from "@/lib/utils/currency";
 import { formatDateShort } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils";
 import type { Account, Category, Transaction } from "@/types";
@@ -63,9 +64,11 @@ export function RecentTransactions({
       </CardHeader>
       <CardContent>
         {recent.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No transactions yet. Add one or import a CSV.
-          </p>
+          <WidgetEmpty
+            message="No transactions yet."
+            actionLabel="Add or import transactions"
+            actionHref="/transactions"
+          />
         ) : (
           <div className="overflow-x-auto">
             <Table>
@@ -81,7 +84,7 @@ export function RecentTransactions({
               <TableBody>
                 {recent.map((t) => (
                   <TableRow key={t.id}>
-                    <TableCell className="max-w-48 truncate font-medium">
+                    <TableCell className="max-w-72 truncate font-medium">
                       {t.description}
                     </TableCell>
                     <TableCell>
@@ -104,15 +107,24 @@ export function RecentTransactions({
                     <TableCell
                       className={cn(
                         "text-numeric text-right font-medium",
-                        Number(t.amount) > 0 && "text-success"
+                        t.type === "income" && "text-success",
+                        t.type === "transfer" && "text-muted-foreground"
                       )}
                     >
-                      {formatCAD(Number(t.amount))}
+                      {formatTransactionAmount(Number(t.amount), t.type)}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+            <div className="mt-2 text-right">
+              <Link
+                href="/transactions"
+                className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+              >
+                View all →
+              </Link>
+            </div>
           </div>
         )}
       </CardContent>

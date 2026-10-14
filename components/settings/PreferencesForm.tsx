@@ -104,7 +104,7 @@ export function PreferencesForm({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="pref-dry-powder">Dry powder amount</Label>
+            <Label htmlFor="pref-dry-powder">Cash ready to invest</Label>
             <Input
               id="pref-dry-powder"
               type="number"
@@ -118,7 +118,9 @@ export function PreferencesForm({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="pref-dry-powder-account">Dry powder account</Label>
+            <Label htmlFor="pref-dry-powder-account">
+              Where that cash sits
+            </Label>
             <Select
               value={form.watch("dry_powder_account_id")}
               onValueChange={(v) =>
@@ -140,7 +142,8 @@ export function PreferencesForm({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Where your investable cash sits while waiting to be deployed.
+              Your investable cash (&ldquo;dry powder&rdquo;) waiting to be
+              deployed.
             </p>
           </div>
 

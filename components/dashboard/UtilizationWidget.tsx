@@ -9,9 +9,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { WidgetEmpty } from "@/components/shared/WidgetEmpty";
 import { formatCAD, formatPercent } from "@/lib/utils/currency";
 import { calculateUtilization } from "@/lib/utils/portfolio";
-import { daysUntilDayOfMonth } from "@/lib/utils/dates";
+import { daysUntilDayOfMonth, formatDaysUntil } from "@/lib/utils/dates";
 import type { Account, PaymentReminder } from "@/types";
 
 export function UtilizationWidget({
@@ -40,9 +41,11 @@ export function UtilizationWidget({
       </CardHeader>
       <CardContent className="space-y-4">
         {cards.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No credit cards added yet.
-          </p>
+          <WidgetEmpty
+            message="No credit cards added yet."
+            actionLabel="Add a card"
+            actionHref="/credit-cards"
+          />
         ) : (
           <>
             {cards.map((card) => {
@@ -138,8 +141,8 @@ export function UtilizationWidget({
                   <p className="text-xs text-muted-foreground">
                     Statement (day {closeDay})
                   </p>
-                  <p className="text-numeric font-medium">
-                    {daysUntilDayOfMonth(closeDay)}d
+                  <p className="text-sm font-medium">
+                    {formatDaysUntil(daysUntilDayOfMonth(closeDay))}
                   </p>
                 </div>
               </div>
@@ -152,8 +155,8 @@ export function UtilizationWidget({
                   <p className="text-xs text-muted-foreground">
                     Due (day {dueDay})
                   </p>
-                  <p className="text-numeric font-medium">
-                    {daysUntilDayOfMonth(dueDay)}d
+                  <p className="text-sm font-medium">
+                    {formatDaysUntil(daysUntilDayOfMonth(dueDay))}
                   </p>
                 </div>
               </div>

@@ -142,6 +142,7 @@ function UserFooter() {
         type="button"
         onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
         aria-label="Toggle dark mode"
+        title="Toggle dark mode"
         className="flex size-[26px] shrink-0 items-center justify-center rounded-full border border-sidebar-border bg-card text-muted-foreground hover:text-foreground"
       >
         <Sun className="size-[13px] dark:hidden" aria-hidden />

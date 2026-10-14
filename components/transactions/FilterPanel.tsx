@@ -16,7 +16,7 @@ import {
 import type { TransactionFilters } from "@/lib/hooks/useTransactions";
 import type { Account, Category, TransactionType } from "@/types";
 
-export const AMOUNT_RANGE: [number, number] = [-5000, 5000];
+export const AMOUNT_RANGE: [number, number] = [0, 5000];
 
 export function FilterPanel({
   filters,

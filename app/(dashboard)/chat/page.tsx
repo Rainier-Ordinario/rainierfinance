@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, Send } from "lucide-react";
-import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { AlertCircle, MessageCircle, RotateCcw, Send } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,6 +37,10 @@ export default function ChatPage() {
   const [streaming, setStreaming] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  // The failed message stays in the thread with an inline error + retry.
+  const [failed, setFailed] = useState<{ text: string; error: string } | null>(
+    null
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -50,28 +55,39 @@ export default function ChatPage() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages.length, streaming]);
+  }, [messages.length, streaming, failed]);
 
   async function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
     setInput("");
     setSending(true);
-    setPending((p) => [
-      ...p,
-      { id: `local-${Date.now()}`, role: "user", content: trimmed },
-    ]);
+    setFailed(null);
+    // Only the in-flight message lives here; persisted ones come from history.
+    setPending([{ id: `local-${Date.now()}`, role: "user", content: trimmed }]);
     setStreaming("");
     try {
       await sendChatMessage(trimmed, setStreaming);
       await invalidateHistory();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
       setPending([]);
+    } catch (err) {
+      // Keep the user's bubble on screen; show what went wrong next to it.
+      setFailed({
+        text: trimmed,
+        error:
+          err instanceof Error ? err.message : "Something went wrong. Try again.",
+      });
+    } finally {
       setStreaming(null);
       setSending(false);
     }
+  }
+
+  function retry() {
+    if (!failed) return;
+    const text = failed.text;
+    setFailed(null);
+    void send(text);
   }
 
   function onSubmit(e: React.FormEvent) {
@@ -133,6 +149,28 @@ export default function ChatPage() {
                 streaming
               />
             )}
+            {failed && (
+              <div className="flex justify-start">
+                <div className="max-w-[85%] space-y-2 rounded-2xl rounded-bl-sm border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-sm">
+                  <p className="flex items-start gap-2">
+                    <AlertCircle
+                      className="mt-0.5 size-4 shrink-0 text-destructive"
+                      aria-hidden
+                    />
+                    <span>{failed.error}</span>
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={retry}
+                  >
+                    <RotateCcw className="size-3.5" aria-hidden />
+                    Retry
+                  </Button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -175,14 +213,20 @@ function Bubble({
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm",
+          "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm",
           isUser
-            ? "rounded-br-sm bg-primary text-primary-foreground"
-            : "rounded-bl-sm bg-muted text-foreground",
+            ? "whitespace-pre-wrap rounded-br-sm bg-primary text-primary-foreground"
+            : // The advisor replies in markdown (lists/tables per its prompt);
+              // render it, with styles scoped to the bubble.
+              "overflow-x-auto rounded-bl-sm bg-muted text-foreground [&>*+*]:mt-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 [&_li+li]:mt-1 [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-background/60 [&_code]:px-1 [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_td]:border [&_td]:px-2 [&_td]:py-1",
           streaming && content === "…" && "animate-pulse"
         )}
       >
-        {content}
+        {isUser ? (
+          content
+        ) : (
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+        )}
       </div>
     </div>
   );

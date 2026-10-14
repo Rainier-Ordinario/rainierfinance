@@ -168,12 +168,11 @@ export interface NetWorthSnapshot {
 
 export interface UserSettings {
   user_id: string;
-  coinbase_api_key_encrypted: string | null;
-  coinbase_api_secret_encrypted: string | null;
-  coinbase_last_synced_at: string | null;
   avion_points_balance: number;
   dry_powder_amount: number;
   dry_powder_account_id: string | null;
+  /** Normalized merchant keys the user dismissed from detection. */
+  dismissed_recurring: string[] | null;
   updated_at: string;
 }
 

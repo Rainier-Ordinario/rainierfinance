@@ -1,4 +1,11 @@
-import { addMonths, differenceInCalendarMonths, parseISO } from "date-fns";
+import {
+  addMonths,
+  addWeeks,
+  addYears,
+  differenceInCalendarMonths,
+  parseISO,
+  startOfDay,
+} from "date-fns";
 import { toISODate } from "@/lib/utils/dates";
 import type { Subscription, Transaction } from "@/types";
 
@@ -13,6 +20,33 @@ export function monthlyAmount(sub: Subscription): number {
     default:
       return amount;
   }
+}
+
+/**
+ * The next billing date on or after today. A stored date that has already
+ * passed means the charge went through, so step it forward by the billing
+ * cycle (monthly when unset) until it's upcoming again. Steps are counted
+ * from the stored date so month-end anchors don't drift (Jan 31 → Mar 31,
+ * not Mar 28). Only active subscriptions renew.
+ */
+export function rolledBillingDate(sub: Subscription, now = new Date()): string {
+  if (sub.status !== "active") return sub.next_billing_date;
+  const anchor = parseISO(sub.next_billing_date);
+  const today = startOfDay(now);
+  const step = (n: number) => {
+    switch (sub.billing_cycle) {
+      case "weekly":
+        return addWeeks(anchor, n);
+      case "yearly":
+        return addYears(anchor, n);
+      default:
+        return addMonths(anchor, n);
+    }
+  };
+  let n = 0;
+  let next = anchor;
+  while (next < today) next = step(++n);
+  return toISODate(next);
 }
 
 /** Known service domains where a naive name→domain guess would miss. */
@@ -41,6 +75,8 @@ export function subscriptionLogoUrl(name: string): string {
 }
 
 export interface DetectedSubscription {
+  /** Normalized merchant key — stable id used to persist dismissals. */
+  key: string;
   name: string;
   amount: number;
   category: string | null;
@@ -63,9 +99,16 @@ function titleCase(s: string): string {
 }
 
 /**
+ * Everyday-errand categories: merchants here repeat because people shop and
+ * eat, not because they're billed on a schedule.
+ */
+const NON_SUBSCRIPTION_CATEGORIES = new Set(["Dining", "Gas", "Groceries"]);
+
+/**
  * Find recurring monthly charges in transaction history that aren't tracked
  * as subscriptions yet: same normalized description, similar amount (±15%),
- * charged in at least 2 distinct months.
+ * charged in at least 3 distinct months, excluding everyday-errand
+ * categories.
  */
 export function detectRecurringCharges(
   transactions: Transaction[],
@@ -76,6 +119,7 @@ export function detectRecurringCharges(
 
   for (const t of transactions) {
     if (t.type !== "expense") continue;
+    if (t.category && NON_SUBSCRIPTION_CATEGORIES.has(t.category)) continue;
     const key = normalize(t.description);
     if (!key) continue;
     groups.set(key, [...(groups.get(key) ?? []), t]);
@@ -87,9 +131,11 @@ export function detectRecurringCharges(
 
     const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date));
     const months = new Set(sorted.map((t) => t.date.slice(0, 7)));
-    if (months.size < 2) continue;
+    if (months.size < 3) continue;
 
-    const amounts = sorted.map((t) => Number(t.amount));
+    // Stored signs are mixed (imports negative, seed positive) — compare
+    // magnitudes.
+    const amounts = sorted.map((t) => Math.abs(Number(t.amount)));
     const min = Math.min(...amounts);
     const max = Math.max(...amounts);
     if (min <= 0 || (max - min) / min > 0.15) continue;
@@ -102,8 +148,9 @@ export function detectRecurringCharges(
 
     const latest = sorted[sorted.length - 1];
     detected.push({
+      key,
       name: titleCase(key),
-      amount: Number(latest.amount),
+      amount: Math.abs(Number(latest.amount)),
       category: latest.category || null,
       account_id: latest.account_id,
       next_billing_date: toISODate(addMonths(parseISO(latest.date), 1)),

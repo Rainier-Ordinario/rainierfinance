@@ -9,7 +9,7 @@ export default function DashboardLayout({
 }) {
   return (
     <Providers>
-      <div className="flex min-h-svh">
+      <div className="flex h-svh overflow-hidden">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <TopBar />

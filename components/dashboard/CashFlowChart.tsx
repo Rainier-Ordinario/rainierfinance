@@ -16,10 +16,30 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { WidgetEmpty } from "@/components/shared/WidgetEmpty";
 import { formatCAD, formatCADWhole } from "@/lib/utils/currency";
 import type { MonthCashFlow } from "@/lib/utils/aggregate";
 
 export function CashFlowChart({ data }: { data: MonthCashFlow[] }) {
+  const hasData = data.some((d) => d.income > 0 || d.expenses > 0);
+
+  if (!hasData) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Cash Flow</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <WidgetEmpty
+            message="Cash flow appears here once you have transactions."
+            actionLabel="Add or import transactions"
+            actionHref="/transactions"
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>

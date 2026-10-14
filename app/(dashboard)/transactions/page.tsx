@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { format, parseISO } from "date-fns";
 import {
   ArrowLeftRight,
   Download,
@@ -14,7 +15,7 @@ import {
 import { PageHeader } from "@/components/shared/PageHeader";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { TableSkeleton } from "@/components/shared/CardSkeleton";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -43,6 +44,7 @@ import {
   useBulkCategorize,
   useDeleteTransactions,
   useTransactions,
+  useTransactionsLastUpdated,
   type TransactionFilters,
 } from "@/lib/hooks/useTransactions";
 import { useAccounts } from "@/lib/hooks/useAccounts";
@@ -74,8 +76,29 @@ function TransactionsContent() {
   const [deleting, setDeleting] = useState<Transaction | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const shouldFocusSearch = searchParams.get("focus") === "search";
+
+  useEffect(() => {
+    if (shouldFocusSearch) searchRef.current?.focus();
+  }, [shouldFocusSearch]);
+
+  // The search box updates the query filters (and so the server request)
+  // only after a typing pause — one request per search, not per keystroke.
+  const [searchInput, setSearchInput] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFilters((f) =>
+        (f.search ?? "") === searchInput.trim()
+          ? f
+          : { ...f, search: searchInput.trim() || undefined }
+      );
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const transactions = useTransactions(filters);
+  const lastUpdated = useTransactionsLastUpdated();
   const accounts = useAccounts();
   const categories = useCategories();
   const deleteTxs = useDeleteTransactions();
@@ -106,7 +129,14 @@ function TransactionsContent() {
     <div>
       <PageHeader
         title="Transactions"
-        description="Every dollar in and out"
+        description={
+          lastUpdated.data
+            ? `Every dollar in and out · Last updated ${format(
+                parseISO(lastUpdated.data),
+                "MMM d, yyyy 'at' h:mm a"
+              )}`
+            : "Every dollar in and out"
+        }
         actions={
           <>
             <Button variant="outline" onClick={() => setImportOpen(true)}>
@@ -151,11 +181,10 @@ function TransactionsContent() {
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input
+          ref={searchRef}
           placeholder="Search descriptions…"
-          value={filters.search ?? ""}
-          onChange={(e) =>
-            setFilters((f) => ({ ...f, search: e.target.value || undefined }))
-          }
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
           className="max-w-xs"
           aria-label="Search transactions"
         />
@@ -281,6 +310,7 @@ function TransactionsContent() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              className={buttonVariants({ variant: "destructive" })}
               onClick={() => {
                 if (deleting) deleteTxs.mutate([deleting.id]);
                 setDeleting(null);
@@ -306,6 +336,7 @@ function TransactionsContent() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              className={buttonVariants({ variant: "destructive" })}
               onClick={() => {
                 deleteTxs.mutate([...selected], {
                   onSuccess: () => setSelected(new Set()),

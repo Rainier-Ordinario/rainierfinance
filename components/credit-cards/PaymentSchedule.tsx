@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { daysUntilDayOfMonth } from "@/lib/utils/dates";
+import { daysUntilDayOfMonth, formatDaysUntil } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils";
 import type { Account, PaymentReminder } from "@/types";
 
@@ -110,7 +110,7 @@ export function PaymentSchedule({
                   value={
                     daysToPay <= 0 && hasBalance
                       ? "Pay now"
-                      : `${Math.max(daysToPay, 0)}d`
+                      : formatDaysUntil(Math.max(daysToPay, 0))
                   }
                   className={cn(
                     hasBalance && daysToPay <= 0 && "text-destructive",
@@ -122,11 +122,11 @@ export function PaymentSchedule({
                 />
                 <TimelineStep
                   label={`Closes ${ordinal(closeDay)}`}
-                  value={`${daysToClose}d`}
+                  value={formatDaysUntil(daysToClose)}
                 />
                 <TimelineStep
                   label={`Due ${ordinal(dueDay)}`}
-                  value={`${daysUntilDayOfMonth(dueDay)}d`}
+                  value={formatDaysUntil(daysUntilDayOfMonth(dueDay))}
                 />
               </div>
             </div>
@@ -155,7 +155,7 @@ function TimelineStep({
   return (
     <div className="rounded-lg bg-muted/50 px-3 py-2">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={cn("text-numeric font-medium", className)}>{value}</p>
+      <p className={cn("text-sm font-medium", className)}>{value}</p>
     </div>
   );
 }

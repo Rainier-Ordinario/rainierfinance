@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { CardSkeleton } from "@/components/shared/CardSkeleton";
 import { ProfileForm } from "@/components/settings/ProfileForm";
 import { PreferencesForm } from "@/components/settings/PreferencesForm";
+import { AccountsCard } from "@/components/settings/AccountsCard";
 import { useAccounts } from "@/lib/hooks/useAccounts";
 import {
   useAuthUser,
@@ -54,6 +55,7 @@ export default function SettingsPage() {
             settings={settings.data ?? null}
             accounts={cashAccounts}
           />
+          <AccountsCard accounts={accounts.data ?? []} />
         </div>
       )}
     </div>

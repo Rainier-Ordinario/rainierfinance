@@ -62,7 +62,7 @@ export function TopBar() {
       <div className="flex-1" />
 
       <Link
-        href="/transactions"
+        href="/transactions?focus=search"
         className="hidden w-[180px] items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground sm:flex"
         aria-label="Search transactions"
       >

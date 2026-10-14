@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { WidgetEmpty } from "@/components/shared/WidgetEmpty";
 import { formatCAD } from "@/lib/utils/currency";
 import { daysUntil } from "@/lib/utils/dates";
 import { initialsFor, logoUrlFor } from "@/lib/utils/logos";
@@ -65,9 +66,11 @@ export function UpcomingSubscriptions({
       </CardHeader>
       <CardContent>
         {upcoming.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No active subscriptions.
-          </p>
+          <WidgetEmpty
+            message="No active subscriptions."
+            actionLabel="Track a subscription"
+            actionHref="/subscriptions"
+          />
         ) : (
           <ul className="space-y-3">
             {upcoming.map((sub) => {

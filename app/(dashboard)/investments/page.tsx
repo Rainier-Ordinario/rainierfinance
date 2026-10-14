@@ -164,6 +164,13 @@ function InvestmentsContent() {
       ) : (
         <>
           {/* Overview */}
+          {investments.isLoading ? (
+            <div className="mb-4 grid gap-4 sm:grid-cols-3">
+              <StatCardSkeleton />
+              <StatCardSkeleton />
+              <StatCardSkeleton />
+            </div>
+          ) : (
           <div className="mb-4 grid gap-4 sm:grid-cols-3">
             <Card>
               <CardContent className="pt-6">
@@ -204,6 +211,7 @@ function InvestmentsContent() {
               </CardContent>
             </Card>
           </div>
+          )}
 
           <Tabs
             value={tab}

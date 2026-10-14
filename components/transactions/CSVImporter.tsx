@@ -223,14 +223,17 @@ export function CSVImporter({
     setNeedsMapping(false);
   }
 
-  const [importProgress, setImportProgress] = useState<number | null>(null);
+  const [importProgress, setImportProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
 
   function confirmImport() {
     if (!accountId) {
       toast.error("Pick which account these transactions belong to");
       return;
     }
-    setImportProgress(0);
+    setImportProgress({ done: 0, total: rows.length });
     importTxs.mutate(
       {
         transactions: rows.map((r) => ({
@@ -241,7 +244,7 @@ export function CSVImporter({
           type: r.type,
           account_id: accountId,
         })),
-        onProgress: setImportProgress,
+        onProgress: (done, total) => setImportProgress({ done, total }),
       },
       {
         onSuccess: () => {
@@ -310,12 +313,18 @@ export function CSVImporter({
                 Importing your transactions…
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {Math.min(importProgress, rows.length)} of {rows.length} added
-                — keep this window open
+                {Math.min(importProgress.done, importProgress.total)} of{" "}
+                {importProgress.total} added — keep this window open
               </p>
             </div>
             <Progress
-              value={(Math.min(importProgress, rows.length) / rows.length) * 100}
+              value={
+                importProgress.total === 0
+                  ? 100
+                  : (Math.min(importProgress.done, importProgress.total) /
+                      importProgress.total) *
+                    100
+              }
               className="h-2 w-64"
             />
           </div>

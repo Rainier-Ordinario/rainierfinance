@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useUpsertTransaction } from "@/lib/hooks/useTransactions";
+import { AccountModal } from "@/components/accounts/AccountModal";
 import { toISODate } from "@/lib/utils/dates";
 import type { Account, Category, Transaction } from "@/types";
 
@@ -56,11 +57,12 @@ export function TransactionModal({
   editing?: Transaction | null;
 }) {
   const upsert = useUpsertTransaction();
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      amount: 0,
+      amount: undefined as unknown as number,
       isExpense: true,
       description: "",
       category: "",
@@ -77,7 +79,9 @@ export function TransactionModal({
         editing
           ? {
               amount: Math.abs(Number(editing.amount)),
-              isExpense: Number(editing.amount) < 0,
+              // The stored sign is unreliable (seed data is positive), so
+              // direction comes from `type`.
+              isExpense: editing.type !== "income",
               description: editing.description,
               category: editing.category,
               account_id: editing.account_id,
@@ -86,7 +90,7 @@ export function TransactionModal({
               notes: editing.notes ?? "",
             }
           : {
-              amount: 0,
+              amount: undefined as unknown as number,
               isExpense: true,
               description: "",
               category: "",
@@ -101,6 +105,22 @@ export function TransactionModal({
   }, [open, editing]);
 
   const isExpense = form.watch("isExpense");
+
+  // "Transfer" isn't addable here, and "Income" only makes sense in income
+  // mode.
+  const visibleCategories = categories.filter(
+    (c) => c.name !== "Transfer" && (!isExpense || c.name !== "Income")
+  );
+
+  function setMode(expense: boolean) {
+    form.setValue("isExpense", expense);
+    const category = form.getValues("category");
+    if (!expense && !category) {
+      const income = categories.find((c) => c.name === "Income");
+      if (income) form.setValue("category", income.name);
+    }
+    if (expense && category === "Income") form.setValue("category", "");
+  }
 
   function onSubmit(values: FormValues) {
     upsert.mutate(
@@ -133,7 +153,7 @@ export function TransactionModal({
               type="button"
               variant={isExpense ? "default" : "outline"}
               className="flex-1"
-              onClick={() => form.setValue("isExpense", true)}
+              onClick={() => setMode(true)}
               aria-pressed={isExpense}
             >
               <Minus className="size-4" aria-hidden /> Expense
@@ -142,7 +162,7 @@ export function TransactionModal({
               type="button"
               variant={!isExpense ? "default" : "outline"}
               className="flex-1"
-              onClick={() => form.setValue("isExpense", false)}
+              onClick={() => setMode(false)}
               aria-pressed={!isExpense}
             >
               <Plus className="size-4" aria-hidden /> Income
@@ -157,6 +177,7 @@ export function TransactionModal({
               step="0.01"
               min="0"
               inputMode="decimal"
+              placeholder="0.00"
               {...form.register("amount", { valueAsNumber: true })}
             />
             <FieldError message={form.formState.errors.amount?.message} />
@@ -183,7 +204,7 @@ export function TransactionModal({
                   <SelectValue placeholder="Category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {categories.map((c) => (
+                  {visibleCategories.map((c) => (
                     <SelectItem key={c.id} value={c.name}>
                       <span
                         className="mr-1 inline-block size-2 rounded-full"
@@ -199,21 +220,38 @@ export function TransactionModal({
             </div>
             <div className="space-y-2">
               <Label>Account</Label>
-              <Select
-                value={form.watch("account_id")}
-                onValueChange={(v) => form.setValue("account_id", v)}
-              >
-                <SelectTrigger aria-label="Account">
-                  <SelectValue placeholder="Account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {accounts.length === 0 ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setAccountModalOpen(true)}
+                  >
+                    <Plus className="size-4" aria-hidden />
+                    Create account
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Transactions need an account to belong to.
+                  </p>
+                </>
+              ) : (
+                <Select
+                  value={form.watch("account_id")}
+                  onValueChange={(v) => form.setValue("account_id", v)}
+                >
+                  <SelectTrigger aria-label="Account">
+                    <SelectValue placeholder="Account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <FieldError message={form.formState.errors.account_id?.message} />
             </div>
           </div>
@@ -224,15 +262,21 @@ export function TransactionModal({
             <FieldError message={form.formState.errors.date?.message} />
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-            <Label htmlFor="tx-recurring" className="cursor-pointer">
-              Recurring
-            </Label>
-            <Switch
-              id="tx-recurring"
-              checked={form.watch("is_recurring")}
-              onCheckedChange={(v) => form.setValue("is_recurring", v)}
-            />
+          <div className="rounded-lg border px-3 py-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="tx-recurring" className="cursor-pointer">
+                Recurring
+              </Label>
+              <Switch
+                id="tx-recurring"
+                checked={form.watch("is_recurring")}
+                onCheckedChange={(v) => form.setValue("is_recurring", v)}
+              />
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Flags this charge as recurring for detection — it won&apos;t
+              create a subscription.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -245,6 +289,14 @@ export function TransactionModal({
           </Button>
         </form>
       </DialogContent>
+
+      <AccountModal
+        open={accountModalOpen}
+        onOpenChange={setAccountModalOpen}
+        onCreated={(account) => {
+          form.setValue("account_id", account.id, { shouldValidate: true });
+        }}
+      />
     </Dialog>
   );
 }

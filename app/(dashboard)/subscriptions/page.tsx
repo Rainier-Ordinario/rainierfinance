@@ -28,6 +28,7 @@ import {
 } from "@/lib/hooks/useSubscriptions";
 import { useAccounts } from "@/lib/hooks/useAccounts";
 import { useTransactions } from "@/lib/hooks/useTransactions";
+import { useUserSettings } from "@/lib/hooks/useSettings";
 import { formatCAD } from "@/lib/utils/currency";
 import {
   detectRecurringCharges,
@@ -43,6 +44,7 @@ export default function SubscriptionsPage() {
   const subscriptions = useSubscriptions();
   const accounts = useAccounts();
   const transactions = useTransactions();
+  const settings = useUserSettings();
   const deleteSubscription = useDeleteSubscription();
 
   const subs = useMemo(() => subscriptions.data ?? [], [subscriptions.data]);
@@ -56,10 +58,12 @@ export default function SubscriptionsPage() {
     return { monthly, yearly: monthly * 12 };
   }, [active]);
 
-  const detected = useMemo(
-    () => detectRecurringCharges(transactions.data ?? [], subs),
-    [transactions.data, subs]
-  );
+  const detected = useMemo(() => {
+    const dismissed = new Set(settings.data?.dismissed_recurring ?? []);
+    return detectRecurringCharges(transactions.data ?? [], subs).filter(
+      (d) => !dismissed.has(d.key)
+    );
+  }, [transactions.data, subs, settings.data]);
 
   const isLoading = subscriptions.isLoading || accounts.isLoading;
 

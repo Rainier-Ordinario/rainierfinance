@@ -23,6 +23,21 @@ export function formatCADSigned(amount: number): string {
   return amount < 0 ? `-${formatted}` : `+${formatted}`;
 }
 
+/**
+ * Display form of a transaction amount. Direction comes from the row's `type`,
+ * never the stored sign — imports store expenses negative while the seed
+ * stores them positive, so the raw sign is not trustworthy.
+ */
+export function formatTransactionAmount(
+  amount: number,
+  type: "income" | "expense" | "transfer"
+): string {
+  const abs = cadFormatter.format(Math.abs(amount));
+  if (type === "income") return `+${abs}`;
+  if (type === "expense") return `-${abs}`;
+  return abs;
+}
+
 export function formatPercent(value: number, decimals = 1): string {
   return `${value.toFixed(decimals)}%`;
 }

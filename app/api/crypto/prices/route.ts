@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 
 // Coinbase public APIs — no auth required.
 const COINBASE_SPOT_URL = "https://api.coinbase.com/v2/prices";
@@ -36,6 +37,16 @@ async function fetchCadRate(currency: string): Promise<number | null> {
 }
 
 export async function GET(request: NextRequest) {
+  // Require a signed-in session — this is a server-side outbound proxy, not
+  // a public endpoint, so it shouldn't be abusable by anonymous callers.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const symbolsParam = request.nextUrl.searchParams.get("symbols") ?? "";
   const fxParam = request.nextUrl.searchParams.get("fx");
   const symbols = [

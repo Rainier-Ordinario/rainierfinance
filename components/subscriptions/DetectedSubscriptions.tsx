@@ -1,6 +1,6 @@
 "use client";
 
-import { Radar, Plus } from "lucide-react";
+import { Radar, Plus, X } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useUpsertSubscription } from "@/lib/hooks/useSubscriptions";
+import { useDismissRecurring } from "@/lib/hooks/useSettings";
 import { formatCAD } from "@/lib/utils/currency";
 import { formatDateShort } from "@/lib/utils/dates";
 import type { DetectedSubscription } from "@/lib/utils/subscriptions";
@@ -19,6 +20,7 @@ export function DetectedSubscriptions({
   detected: DetectedSubscription[];
 }) {
   const upsert = useUpsertSubscription();
+  const dismissRecurring = useDismissRecurring();
 
   if (detected.length === 0) return null;
 
@@ -37,7 +39,7 @@ export function DetectedSubscriptions({
         </p>
         {detected.map((d) => (
           <div
-            key={d.name}
+            key={d.key}
             className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
           >
             <div className="min-w-0">
@@ -48,25 +50,37 @@ export function DetectedSubscriptions({
                 {formatDateShort(d.next_billing_date)}
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={upsert.isPending}
-              onClick={() =>
-                upsert.mutate({
-                  name: d.name,
-                  amount: d.amount,
-                  billing_cycle: "monthly",
-                  next_billing_date: d.next_billing_date,
-                  category: d.category,
-                  account_id: d.account_id,
-                  status: "active",
-                })
-              }
-            >
-              <Plus className="size-3.5" aria-hidden />
-              Track
-            </Button>
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={upsert.isPending}
+                onClick={() =>
+                  upsert.mutate({
+                    name: d.name,
+                    amount: d.amount,
+                    billing_cycle: "monthly",
+                    next_billing_date: d.next_billing_date,
+                    category: d.category,
+                    account_id: d.account_id,
+                    status: "active",
+                  })
+                }
+              >
+                <Plus className="size-3.5" aria-hidden />
+                Track
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={dismissRecurring.isPending}
+                onClick={() => dismissRecurring.mutate(d.key)}
+                aria-label={`Dismiss ${d.name}`}
+              >
+                <X className="size-3.5" aria-hidden />
+                Dismiss
+              </Button>
+            </div>
           </div>
         ))}
       </CardContent>

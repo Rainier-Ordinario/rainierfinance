@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { formatCAD, formatCADSigned, formatPercentSigned } from "@/lib/utils/currency";
+import { WidgetEmpty } from "@/components/shared/WidgetEmpty";
 import { cn } from "@/lib/utils";
 import type { Investment } from "@/types";
 
@@ -33,13 +34,21 @@ export function InvestmentSummary({ holdings }: { holdings: Investment[] }) {
   const bookValue = totalValue - totalGain;
   const gainPct = bookValue > 0 ? (totalGain / bookValue) * 100 : 0;
 
-  const top = [...holdings]
-    .sort((a, b) => Number(b.market_value ?? 0) - Number(a.market_value ?? 0))
+  // Combine holdings of the same ticker across accounts (e.g. VFV in both
+  // TFSA and FHSA) so each symbol appears once in the list and pie.
+  const bySymbol = new Map<string, number>();
+  for (const h of holdings) {
+    bySymbol.set(
+      h.symbol,
+      (bySymbol.get(h.symbol) ?? 0) + Number(h.market_value ?? 0)
+    );
+  }
+  const top = [...bySymbol.entries()]
+    .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
-  const otherValue =
-    totalValue - top.reduce((s, h) => s + Number(h.market_value ?? 0), 0);
+  const otherValue = totalValue - top.reduce((s, [, v]) => s + v, 0);
   const allocation = [
-    ...top.map((h) => ({ name: h.symbol, value: Number(h.market_value ?? 0) })),
+    ...top.map(([name, value]) => ({ name, value })),
     ...(otherValue > 0.01 ? [{ name: "Other", value: otherValue }] : []),
   ];
 
@@ -54,9 +63,11 @@ export function InvestmentSummary({ holdings }: { holdings: Investment[] }) {
       </CardHeader>
       <CardContent>
         {holdings.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No holdings yet. Import from Wealthsimple.
-          </p>
+          <WidgetEmpty
+            message="No holdings yet."
+            actionLabel="Import from Wealthsimple"
+            actionHref="/investments"
+          />
         ) : (
           <div className="flex items-center gap-4">
             <div className="flex-1">

@@ -9,6 +9,9 @@ Run locally:  uvicorn main:app --reload --port 8000  (from api/)
 """
 
 import asyncio
+import logging
+import time
+from collections import defaultdict
 from typing import Any
 
 import httpx
@@ -20,6 +23,8 @@ from pydantic import BaseModel, Field
 
 import config
 
+logger = logging.getLogger("rainierfinance")
+
 app = FastAPI(title="RainierFinance API")
 
 app.add_middleware(
@@ -30,6 +35,36 @@ app.add_middleware(
 )
 
 anthropic_client = AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
+
+# Per-user rate limit for the paid chat endpoint. In-process sliding window —
+# fine for a single service instance; move to Redis if horizontally scaled.
+RATE_LIMIT_MAX = 10
+RATE_LIMIT_WINDOW = 60.0  # seconds
+_chat_hits: dict[str, list[float]] = defaultdict(list)
+
+
+def enforce_chat_rate_limit(user_id: str) -> None:
+    now = time.monotonic()
+    # Keep the map bounded: once it grows, drop users whose hits all aged out.
+    if len(_chat_hits) > 500:
+        stale = [
+            uid
+            for uid, ts in _chat_hits.items()
+            if all(now - t >= RATE_LIMIT_WINDOW for t in ts)
+        ]
+        for uid in stale:
+            del _chat_hits[uid]
+    hits = _chat_hits[user_id]
+    # Drop timestamps outside the window.
+    fresh = [t for t in hits if now - t < RATE_LIMIT_WINDOW]
+    if len(fresh) >= RATE_LIMIT_MAX:
+        _chat_hits[user_id] = fresh
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests — wait a minute before asking again.",
+        )
+    fresh.append(now)
+    _chat_hits[user_id] = fresh
 
 REST_URL = f"{config.SUPABASE_URL}/rest/v1"
 SERVICE_HEADERS = {
@@ -235,11 +270,11 @@ async def chat(body: ChatRequest, user: dict = Depends(get_user)):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set")
 
     user_id = user["id"]
+    enforce_chat_rate_limit(user_id)
     context, history = await asyncio.gather(
         build_financial_context(user_id), load_history(user_id)
     )
 
-    await save_message(user_id, "user", body.message)
     messages = history + [{"role": "user", "content": body.message}]
 
     system = [
@@ -263,11 +298,23 @@ async def chat(body: ChatRequest, user: dict = Depends(get_user)):
                 async for text in stream.text_stream:
                     chunks.append(text)
                     yield text
-        except Exception as err:  # surfaced mid-stream; status is already 200
-            yield f"\n\n[Advisor error: {err}]"
+        except Exception:  # surfaced mid-stream; status is already 200
+            # Never stream raw exception text to the client — it can carry
+            # internal URLs and request details. Log it; send a generic marker.
+            logger.exception("Advisor stream failed for user %s", user_id)
+            yield (
+                "\n\n[Advisor error: The advisor ran into a problem answering"
+                " this. Try again in a moment.]"
+            )
             return
         full = "".join(chunks)
         if full.strip():
-            await save_message(user_id, "assistant", full)
+            # Persist only after a successful stream so a failed or retried
+            # request doesn't leave duplicate user turns in the history.
+            try:
+                await save_message(user_id, "user", body.message)
+                await save_message(user_id, "assistant", full)
+            except Exception:
+                logger.exception("Failed to persist chat turn for %s", user_id)
 
     return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")

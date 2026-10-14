@@ -36,24 +36,30 @@ export function PortfolioHealth({ holdings }: { holdings: Investment[] }) {
         >
           {health.grade}
         </div>
-        <ul className="space-y-2 text-sm">
-          {health.feedback.map((f, i) => (
-            <li key={i} className="flex items-start gap-2">
-              {health.grade === "A" ? (
-                <CheckCircle2
-                  className="mt-0.5 size-4 shrink-0 text-success"
-                  aria-hidden
-                />
-              ) : (
-                <Info
-                  className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                  aria-hidden
-                />
-              )}
-              <span className="text-muted-foreground">{f}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-2">
+          <ul className="space-y-2 text-sm">
+            {health.feedback.map((f, i) => (
+              <li key={i} className="flex items-start gap-2">
+                {health.grade === "A" ? (
+                  <CheckCircle2
+                    className="mt-0.5 size-4 shrink-0 text-success"
+                    aria-hidden
+                  />
+                ) : (
+                  <Info
+                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                    aria-hidden
+                  />
+                )}
+                <span className="text-muted-foreground">{f}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted-foreground/70">
+            The grade weighs single-stock concentration, overlapping ETFs, and
+            geographic mix.
+          </p>
+        </div>
       </CardContent>
     </Card>
   );

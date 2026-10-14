@@ -14,7 +14,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { format, parseISO } from "date-fns";
-import { formatCAD, formatCADSigned } from "@/lib/utils/currency";
+import {
+  formatCAD,
+  formatCADSigned,
+  formatTransactionAmount,
+} from "@/lib/utils/currency";
 import { formatDate } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils";
 import { CategoryDot } from "@/components/dashboard/RecentTransactions";
@@ -199,10 +203,11 @@ export function TransactionTable({
       <TableCell
         className={cn(
           "text-numeric text-right font-medium",
-          Number(t.amount) > 0 && "text-success"
+          t.type === "income" && "text-success",
+          t.type === "transfer" && "text-muted-foreground"
         )}
       >
-        {formatCAD(Number(t.amount))}
+        {formatTransactionAmount(Number(t.amount), t.type)}
       </TableCell>
       <TableCell>
         <Badge
