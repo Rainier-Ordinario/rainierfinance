@@ -52,7 +52,7 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Warm cream/amber theme from "RainierFinance Redesign" (claude.ai/design) */
+/* Warm cream/amber theme */
 :root {
   --background: #faf9f6;
   --foreground: #1c1b19;
