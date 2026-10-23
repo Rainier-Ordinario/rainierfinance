@@ -13,6 +13,7 @@ const PAGE_META: Record<string, { title: string; subtitle: string }> = {
     title: "Insights",
     subtitle: "Trends and where it goes",
   },
+  "/goals": { title: "Goals", subtitle: "Savings goals and challenges" },
   "/budgets": { title: "Budgets", subtitle: "This month's spending plan" },
   "/subscriptions": {
     title: "Subscriptions",

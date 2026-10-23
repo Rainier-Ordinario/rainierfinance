@@ -248,7 +248,9 @@ def spending_insights(
         total = sum(spend_of(t) for t in mtxs)
         if purchases and total > 0:
             category = Counter(t.get("category") for t in purchases).most_common(1)[0][0]
-            summaries.append((key, category, total, len(purchases)))
+            # The parts of a split purchase are one visit.
+            visits = len({t.get("split_group") or id(t) for t in purchases})
+            summaries.append((key, category, total, visits))
     summaries.sort(key=lambda m: -m[2])
     lines.append(
         f"\n### Top merchants ({usual_start.isoformat()} to {usual_end.isoformat()}, 3 months)"

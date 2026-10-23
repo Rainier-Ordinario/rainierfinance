@@ -41,11 +41,13 @@ import { FilterPanel } from "@/components/transactions/FilterPanel";
 import { CSVImporter } from "@/components/transactions/CSVImporter";
 import { TrendPanel } from "@/components/transactions/TrendPanel";
 import { PossibleRefunds } from "@/components/transactions/PossibleRefunds";
+import { SplitDialog } from "@/components/transactions/SplitDialog";
 import {
   useBulkCategorize,
   useDeleteTransactions,
   useTransactions,
   useTransactionsLastUpdated,
+  useUnsplitTransaction,
   type TransactionFilters,
 } from "@/lib/hooks/useTransactions";
 import { useAccounts } from "@/lib/hooks/useAccounts";
@@ -88,6 +90,8 @@ function TransactionsContent() {
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [deleting, setDeleting] = useState<Transaction | null>(null);
+  const [splitting, setSplitting] = useState<Transaction | null>(null);
+  const unsplit = useUnsplitTransaction();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -304,6 +308,8 @@ function TransactionsContent() {
                 setModalOpen(true);
               }}
               onDelete={setDeleting}
+              onSplit={setSplitting}
+              onUnsplit={(t) => unsplit.mutate(t)}
             />
           )}
         </div>
@@ -315,6 +321,12 @@ function TransactionsContent() {
         accounts={accounts.data ?? []}
         categories={categories.data ?? []}
         editing={editing}
+      />
+
+      <SplitDialog
+        transaction={splitting}
+        categories={categories.data ?? []}
+        onOpenChange={(o) => !o && setSplitting(null)}
       />
 
       <CSVImporter

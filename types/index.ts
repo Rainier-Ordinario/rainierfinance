@@ -20,6 +20,32 @@ export type RegisteredAccountType = "TFSA" | "FHSA" | "RRSP" | "Non-Registered";
 export type AssetType = "ETF" | "EQUITY" | "CRYPTO";
 export type ChatRole = "user" | "assistant";
 export type AutopayType = "minimum" | "full_balance" | "fixed";
+export type ChallengeKind = "category_cap" | "no_spend_days";
+
+export interface Goal {
+  id: string;
+  user_id: string;
+  name: string;
+  emoji: string;
+  target_amount: number;
+  target_date: string | null;
+  /** Manual progress; ignored when account_id links a balance. */
+  saved_amount: number;
+  account_id: string | null;
+  created_at: string;
+}
+
+export interface Challenge {
+  id: string;
+  user_id: string;
+  kind: ChallengeKind;
+  category: string | null;
+  /** Dollar cap (category_cap) or number of days (no_spend_days). */
+  target: number;
+  /** First day of the challenge's month. */
+  month: string;
+  created_at: string;
+}
 
 export interface Profile {
   id: string;
@@ -57,6 +83,10 @@ export interface Transaction {
   type: TransactionType;
   is_recurring: boolean;
   notes: string | null;
+  /** Rows split from one bank transaction share this id (migration 007). */
+  split_group?: string | null;
+  /** The bank's original amount for a split row, for re-import matching. */
+  split_original_amount?: number | null;
   created_at: string;
   updated_at: string;
 }

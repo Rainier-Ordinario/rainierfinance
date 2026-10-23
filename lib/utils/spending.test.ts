@@ -384,3 +384,15 @@ describe("savings and money flow", () => {
     ]);
   });
 });
+
+describe("split purchases", () => {
+  it("count once as a merchant visit and aren't small purchases", () => {
+    const parts = [
+      tx({ description: "COSTCO W550", category: "Groceries", amount: -180, split_group: "g", split_original_amount: -240 }),
+      tx({ description: "COSTCO W550", category: "Shopping", amount: -10, split_group: "g", split_original_amount: -240 }),
+    ];
+    const [costco] = topMerchants(parts, "2026-10-01", "2026-10-31");
+    expect(costco).toMatchObject({ visits: 1, total: 190, average: 190 });
+    expect(smallPurchases(parts, [], 1, 15, now)[0].count).toBe(0);
+  });
+});

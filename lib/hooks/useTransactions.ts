@@ -3,6 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import {
+  dedupeImport,
+  splitError,
+  type DedupRow,
+  type SplitPart,
+} from "@/lib/utils/importDedup";
 import type { Transaction, TransactionType } from "@/types";
 
 export interface TransactionFilters {
@@ -119,16 +125,41 @@ export function useUpsertTransaction() {
 
 const IMPORT_CHUNK_SIZE = 250;
 
-/** Identity used for duplicate detection on re-import. */
-function importDupKey(row: {
-  date: string;
-  description: string;
-  amount: number;
-  account_id?: string | null;
-}): string {
-  return `${row.account_id ?? ""}|${row.date}|${row.description}|${Number(
-    row.amount
-  ).toFixed(2)}`;
+const SPLIT_COLUMNS = "split_group,split_original_amount";
+
+/**
+ * Rows already stored in the date range, paged past PostgREST's row cap.
+ * Falls back to plain columns before migration 007 adds the split ones.
+ */
+async function fetchExistingForDedup(
+  from: string,
+  to: string,
+  accountIds: string[]
+): Promise<DedupRow[]> {
+  const supabase = createClient();
+  const page = (columns: string, offset: number) => {
+    let q = supabase
+      .from("transactions")
+      .select(columns)
+      .gte("date", from)
+      .lte("date", to)
+      .order("id")
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (accountIds.length > 0) q = q.in("account_id", accountIds);
+    return q;
+  };
+  let columns = `date,description,amount,account_id,${SPLIT_COLUMNS}`;
+  const rows: DedupRow[] = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    let { data, error } = await page(columns, offset);
+    if (error && /split_/.test(error.message)) {
+      columns = "date,description,amount,account_id";
+      ({ data, error } = await page(columns, offset));
+    }
+    if (error) throw error;
+    rows.push(...((data ?? []) as unknown as DedupRow[]));
+    if ((data ?? []).length < PAGE_SIZE) return rows;
+  }
 }
 
 export interface ImportResult {
@@ -161,36 +192,15 @@ export function useImportTransactions() {
       // Occurrences are counted, so two genuine identical charges in a new
       // file still import when only one is in the database.
       const dates = rows.map((r) => r.date).sort();
-      let existingQuery = supabase
-        .from("transactions")
-        .select("date,description,amount,account_id")
-        .gte("date", dates[0])
-        .lte("date", dates[dates.length - 1]);
       const accountIds = [
         ...new Set(rows.map((r) => r.account_id).filter(Boolean)),
       ] as string[];
-      if (accountIds.length > 0)
-        existingQuery = existingQuery.in("account_id", accountIds);
-      const { data: existing, error: existingError } = await existingQuery;
-      if (existingError) throw existingError;
-
-      const existingCounts = new Map<string, number>();
-      for (const e of existing ?? []) {
-        const key = importDupKey(e);
-        existingCounts.set(key, (existingCounts.get(key) ?? 0) + 1);
-      }
-      const toInsert: typeof rows = [];
-      let skipped = 0;
-      for (const row of rows) {
-        const key = importDupKey(row);
-        const remaining = existingCounts.get(key) ?? 0;
-        if (remaining > 0) {
-          existingCounts.set(key, remaining - 1);
-          skipped++;
-        } else {
-          toInsert.push(row);
-        }
-      }
+      const existing = await fetchExistingForDedup(
+        dates[0],
+        dates[dates.length - 1],
+        accountIds
+      );
+      const { toInsert, skipped } = dedupeImport(rows, existing);
 
       onProgress?.(0, toInsert.length);
       for (let i = 0; i < toInsert.length; i += IMPORT_CHUNK_SIZE) {
@@ -293,6 +303,95 @@ export function useConvertToRefunds() {
       toast.success(
         `Marked ${count} ${count === 1 ? "transaction" : "transactions"} as refunds`
       );
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+/**
+ * Split one transaction into parts in different categories. The original
+ * row becomes the first part; the rest are new rows sharing a split_group.
+ */
+export function useSplitTransaction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      transaction,
+      parts,
+    }: {
+      transaction: Transaction;
+      parts: SplitPart[];
+    }) => {
+      const error = splitError(Number(transaction.amount), parts);
+      if (error) throw new Error(error);
+      const supabase = createClient();
+      const sign = Number(transaction.amount) < 0 ? -1 : 1;
+      const group = crypto.randomUUID();
+      const shared = {
+        split_group: group,
+        split_original_amount: Number(transaction.amount),
+      };
+      const [first, ...rest] = parts;
+      const { error: updateError } = await supabase
+        .from("transactions")
+        .update({ ...shared, category: first.category, amount: sign * first.amount })
+        .eq("id", transaction.id);
+      if (updateError) throw updateError;
+      const { error: insertError } = await supabase.from("transactions").insert(
+        rest.map((p) => ({
+          ...shared,
+          user_id: transaction.user_id,
+          account_id: transaction.account_id,
+          date: transaction.date,
+          description: transaction.description,
+          type: transaction.type,
+          is_recurring: false,
+          notes: transaction.notes,
+          category: p.category,
+          amount: sign * p.amount,
+        }))
+      );
+      if (insertError) throw insertError;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      toast.success("Transaction split");
+    },
+    onError: (err) =>
+      toast.error(
+        /split_/.test(err.message)
+          ? "Splitting needs a quick database update — run migration 007."
+          : err.message
+      ),
+  });
+}
+
+/** Merge a split back into one row with the bank's original amount. */
+export function useUnsplitTransaction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (transaction: Transaction) => {
+      if (!transaction.split_group) return;
+      const supabase = createClient();
+      const { error: deleteError } = await supabase
+        .from("transactions")
+        .delete()
+        .eq("split_group", transaction.split_group)
+        .neq("id", transaction.id);
+      if (deleteError) throw deleteError;
+      const { error } = await supabase
+        .from("transactions")
+        .update({
+          amount: transaction.split_original_amount,
+          split_group: null,
+          split_original_amount: null,
+        })
+        .eq("id", transaction.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      toast.success("Split undone");
     },
     onError: (err) => toast.error(err.message),
   });

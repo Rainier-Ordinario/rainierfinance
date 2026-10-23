@@ -377,6 +377,8 @@ export function topMerchants(
     .map(([key, txs]) => {
       // Refunds lower the total but aren't visits.
       const purchases = txs.filter((t) => spendOf(t) > 0);
+      // The parts of a split purchase are one visit.
+      const visits = new Set(purchases.map((t) => t.split_group ?? t.id)).size;
       const total = txs.reduce((s, t) => s + spendOf(t), 0);
       const categoryCounts = new Map<string, number>();
       for (const t of purchases) {
@@ -389,9 +391,9 @@ export function topMerchants(
         key,
         name: titleCase(key),
         category,
-        visits: purchases.length,
+        visits,
         total,
-        average: total / purchases.length,
+        average: total / visits,
         lastDate: purchases.reduce((d, t) => (t.date > d ? t.date : d), ""),
         searchTerm: key.split(" ").sort((a, b) => b.length - a.length)[0],
       };
@@ -685,7 +687,8 @@ export function smallPurchases(
     const small = expensesIn(transactions, w.start, w.end).filter(
       (t) =>
         spendOf(t) > 0 &&
-        spendOf(t) < limit &&
+        // A split part is only as small as the purchase it came from.
+        Math.abs(Number(t.split_original_amount ?? t.amount)) < limit &&
         categoryKind(t.category, categories) !== "fixed"
     );
     return {

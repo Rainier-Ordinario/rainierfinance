@@ -181,7 +181,8 @@ async def build_financial_context(user_id: str) -> str:
                 {
                     "user_id": eq,
                     "date": f"gte.{history_start.isoformat()}",
-                    "select": "id,date,description,category,amount,type",
+                    # "*" so split_group is included once migration 007 adds it.
+                    "select": "*",
                     "order": "date.desc,id",
                 },
             ),

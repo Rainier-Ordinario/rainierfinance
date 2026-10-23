@@ -1,7 +1,15 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { ArrowUpDown, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import {
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  Merge,
+  Pencil,
+  Split,
+  Trash2,
+} from "lucide-react";
 import {
   Table,
   TableBody,
@@ -37,6 +45,8 @@ export function TransactionTable({
   onSelectedChange,
   onEdit,
   onDelete,
+  onSplit,
+  onUnsplit,
 }: {
   transactions: Transaction[];
   accounts: Account[];
@@ -45,6 +55,8 @@ export function TransactionTable({
   onSelectedChange: (selected: Set<string>) => void;
   onEdit: (transaction: Transaction) => void;
   onDelete: (transaction: Transaction) => void;
+  onSplit?: (transaction: Transaction) => void;
+  onUnsplit?: (transaction: Transaction) => void;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortAsc, setSortAsc] = useState(false);
@@ -225,9 +237,39 @@ export function TransactionTable({
         >
           {isRefund(t) ? "refund" : t.type}
         </Badge>
+        {t.split_group && (
+          <Badge variant="outline" className="ml-1">
+            split
+          </Badge>
+        )}
       </TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-1">
+          {t.split_group
+            ? onUnsplit && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onUnsplit(t)}
+                  aria-label={`Undo split of ${t.description}`}
+                  title="Undo split"
+                >
+                  <Merge className="size-3.5" aria-hidden />
+                </Button>
+              )
+            : onSplit &&
+              t.type === "expense" &&
+              !isRefund(t) && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onSplit(t)}
+                  aria-label={`Split ${t.description}`}
+                  title="Split across categories"
+                >
+                  <Split className="size-3.5" aria-hidden />
+                </Button>
+              )}
           <Button
             variant="ghost"
             size="icon"
