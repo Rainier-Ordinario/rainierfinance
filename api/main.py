@@ -12,6 +12,7 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
+from datetime import date
 from typing import Any
 
 import httpx
@@ -22,6 +23,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 import config
+import insights
 
 logger = logging.getLogger("rainierfinance")
 
@@ -86,6 +88,14 @@ they help.
 own data. You are not a licensed financial advisor, so frame investment \
 choices as considerations, not directives, and say so when asked for \
 personalized investment advice.
+- For questions about habits, overspending, or where money goes, lean on \
+the "Spending insights" section: it is computed from all transactions, \
+not just the recent ones listed. "Usual" means the average of the last 3 \
+complete months. Spending groups: Fixed (bills that recur at a set amount), \
+Essentials (needs whose amount varies), Discretionary (wants) — the user \
+can regroup categories in the app.
+- "Safe to spend today" is the app's daily allowance for discretionary \
+spending; use it when asked what they can afford.
 - If the data doesn't contain the answer, say what's missing rather than \
 guessing."""
 
@@ -121,6 +131,23 @@ async def sb_select(http: httpx.AsyncClient, table: str, params: dict) -> list:
     return res.json()
 
 
+PAGE_SIZE = 1000  # PostgREST's per-request row cap
+
+
+async def sb_select_all(http: httpx.AsyncClient, table: str, params: dict) -> list:
+    """sb_select, paged until a short page so large tables aren't truncated."""
+    rows: list = []
+    offset = 0
+    while True:
+        page = await sb_select(
+            http, table, {**params, "limit": str(PAGE_SIZE), "offset": str(offset)}
+        )
+        rows.extend(page)
+        if len(page) < PAGE_SIZE:
+            return rows
+        offset += PAGE_SIZE
+
+
 def fmt_amount(value: Any) -> str:
     try:
         return f"${float(value):,.2f}"
@@ -131,10 +158,15 @@ def fmt_amount(value: Any) -> str:
 async def build_financial_context(user_id: str) -> str:
     """Fetch the user's data and render it as compact text for the model."""
     eq = f"eq.{user_id}"
+    today = date.today()
+    # Enough history for "usual" (3 months) vs the 3 before, and for
+    # yearly budgets that started in January.
+    history_start = min(insights.month_start(today, 7), date(today.year, 1, 1))
     async with httpx.AsyncClient(timeout=15) as http:
         (
             accounts,
             transactions,
+            categories,
             budgets,
             subscriptions,
             investments,
@@ -143,11 +175,17 @@ async def build_financial_context(user_id: str) -> str:
             settings,
         ) = await asyncio.gather(
             sb_select(http, "accounts", {"user_id": eq, "is_active": "eq.true"}),
-            sb_select(
+            sb_select_all(
                 http,
                 "transactions",
-                {"user_id": eq, "order": "date.desc", "limit": "60"},
+                {
+                    "user_id": eq,
+                    "date": f"gte.{history_start.isoformat()}",
+                    "select": "id,date,description,category,amount,type",
+                    "order": "date.desc,id",
+                },
             ),
+            sb_select(http, "categories", {"user_id": eq}),
             sb_select(http, "budgets", {"user_id": eq}),
             sb_select(
                 http, "subscriptions", {"user_id": eq, "status": "eq.active"}
@@ -176,20 +214,28 @@ async def build_financial_context(user_id: str) -> str:
             f"balance {fmt_amount(a['balance'])}{limit}"
         )
 
+    st = settings[0] if settings else {}
+    # Columns from later migrations may be absent; fall back to app defaults.
+    kinds = {c["name"]: c["kind"] for c in categories if c.get("kind")}
+    savings_target = float(
+        st.get("savings_target_pct") or insights.DEFAULT_SAVINGS_TARGET_PCT
+    )
+    lines.append(
+        f"\n## Spending insights (computed from all transactions; today is {today.isoformat()})"
+    )
+    lines.extend(
+        insights.spending_insights(transactions, kinds, savings_target, today)
+    )
+
     lines.append("\n## Recent transactions (newest first, up to 60)")
-    for t in transactions:
+    for t in transactions[:60]:
         lines.append(
             f"- {t['date']} | {t['description']} | {t['category']} | "
             f"{fmt_amount(t['amount'])} | {t['type']}"
         )
 
-    lines.append("\n## Budgets")
-    for b in budgets:
-        lines.append(
-            f"- {b['name']} ({b.get('period')}): spent "
-            f"{fmt_amount(b['spent_amount'])} of {fmt_amount(b['total_amount'])}"
-            + (f" [{b['category']}]" if b.get("category") else "")
-        )
+    lines.append("\n## Budgets (spent measured live from transactions)")
+    lines.extend(insights.budget_lines(budgets, transactions, today))
 
     lines.append("\n## Active subscriptions")
     for s in subscriptions:
@@ -223,8 +269,7 @@ async def build_financial_context(user_id: str) -> str:
             f"{fmt_amount(n.get('total_liabilities'))})"
         )
 
-    if settings:
-        st = settings[0]
+    if st:
         lines.append(
             f"\n## Other\n- Avion points: {st.get('avion_points_balance', 0)}\n"
             f"- Dry powder (cash ready to invest): "
