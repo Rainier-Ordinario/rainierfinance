@@ -10,6 +10,7 @@ import {
   startOfYear,
   subMonths,
 } from "date-fns";
+import { spendOf } from "@/lib/utils/aggregate";
 import { toISODate } from "@/lib/utils/dates";
 import {
   categoryKind,
@@ -77,7 +78,7 @@ export function budgetProgress(
 ): BudgetProgress {
   const { start, end } = budgetPeriodRange(budget, now);
   const spent = budgetTransactions(budget, transactions, now).reduce(
-    (s, t) => s + Math.abs(Number(t.amount)),
+    (s, t) => s + spendOf(t),
     0
   );
   const total = Number(budget.total_amount);
@@ -130,7 +131,7 @@ export function dailySpendSeries(
   const byDay = new Map<number, number>();
   for (const t of txs) {
     const day = differenceInCalendarDays(parseISO(t.date), start) + 1;
-    byDay.set(day, (byDay.get(day) ?? 0) + Math.abs(Number(t.amount)));
+    byDay.set(day, (byDay.get(day) ?? 0) + spendOf(t));
   }
 
   const points: DailySpendPoint[] = [];
@@ -224,7 +225,7 @@ export function budgetSuggestion(
         t.date >= start &&
         t.date <= end
     )
-    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+    .reduce((s, t) => s + spendOf(t), 0);
 
   const perMonth = total / months;
   const usual =

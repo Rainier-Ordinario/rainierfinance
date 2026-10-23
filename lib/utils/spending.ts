@@ -9,7 +9,11 @@ import {
   subMonths,
   subWeeks,
 } from "date-fns";
-import { categoryTotalsInRange, type CategoryTotal } from "@/lib/utils/aggregate";
+import {
+  categoryTotalsInRange,
+  spendOf,
+  type CategoryTotal,
+} from "@/lib/utils/aggregate";
 import { merchantKey } from "@/lib/utils/categorize";
 import { toISODate } from "@/lib/utils/dates";
 import type { Category, CategoryKind, Transaction } from "@/types";
@@ -20,6 +24,7 @@ export const NOT_SPENDING = new Set(["Income", "Transfer", "Investments", "Crypt
 /** The catch-all category the auto-categorizer falls back to. */
 export const UNCATEGORIZED = "Other";
 
+/** Size of an income amount. Spending uses spendOf(), which nets refunds. */
 function magnitude(t: Transaction): number {
   return Math.abs(Number(t.amount));
 }
@@ -55,8 +60,8 @@ export function uncategorizedSummary(
   const end = toISODate(now);
   const expenses = expensesIn(transactions, start, end);
   const stuck = expenses.filter((t) => !t.category || t.category === UNCATEGORIZED);
-  const total = expenses.reduce((sum, t) => sum + magnitude(t), 0);
-  const amount = stuck.reduce((sum, t) => sum + magnitude(t), 0);
+  const total = expenses.reduce((sum, t) => sum + spendOf(t), 0);
+  const amount = stuck.reduce((sum, t) => sum + spendOf(t), 0);
   return {
     amount,
     count: stuck.length,
@@ -119,7 +124,7 @@ export function kindTotals(
 ): KindTotals {
   const totals: KindTotals = { fixed: 0, essential: 0, discretionary: 0 };
   for (const t of expensesIn(transactions, start, end)) {
-    totals[categoryKind(t.category, categories)] += magnitude(t);
+    totals[categoryKind(t.category, categories)] += spendOf(t);
   }
   return totals;
 }
@@ -310,7 +315,7 @@ export function categoryTrends(
     const idx = windows.findIndex((w) => t.date >= w.start && t.date <= w.end);
     if (idx === -1) continue;
     const amounts = byCategory.get(t.category) ?? new Array(months).fill(0);
-    amounts[idx] += magnitude(t);
+    amounts[idx] += spendOf(t);
     byCategory.set(t.category, amounts);
   }
 
@@ -368,10 +373,13 @@ export function topMerchants(
   }
 
   return [...groups.entries()]
+    .filter(([, txs]) => txs.some((t) => spendOf(t) > 0))
     .map(([key, txs]) => {
-      const total = txs.reduce((s, t) => s + magnitude(t), 0);
+      // Refunds lower the total but aren't visits.
+      const purchases = txs.filter((t) => spendOf(t) > 0);
+      const total = txs.reduce((s, t) => s + spendOf(t), 0);
       const categoryCounts = new Map<string, number>();
-      for (const t of txs) {
+      for (const t of purchases) {
         categoryCounts.set(t.category, (categoryCounts.get(t.category) ?? 0) + 1);
       }
       const category = [...categoryCounts.entries()].sort(
@@ -381,10 +389,10 @@ export function topMerchants(
         key,
         name: titleCase(key),
         category,
-        visits: txs.length,
+        visits: purchases.length,
         total,
-        average: total / txs.length,
-        lastDate: txs.reduce((d, t) => (t.date > d ? t.date : d), ""),
+        average: total / purchases.length,
+        lastDate: purchases.reduce((d, t) => (t.date > d ? t.date : d), ""),
         searchTerm: key.split(" ").sort((a, b) => b.length - a.length)[0],
       };
     })
@@ -532,7 +540,7 @@ export function whatChanged(
     const totals = new Map<string, number>();
     for (const t of txs) {
       const key = keyOf(t);
-      totals.set(key, (totals.get(key) ?? 0) + magnitude(t));
+      totals.set(key, (totals.get(key) ?? 0) + spendOf(t));
     }
     return totals;
   };
@@ -627,7 +635,7 @@ export function weekdayPattern(
   for (const t of expensesIn(transactions, start, end)) {
     if (categoryKind(t.category, categories) !== "discretionary") continue;
     // getDay: Sunday = 0; shift so Monday = 0.
-    totals[(parseISO(t.date).getDay() + 6) % 7] += magnitude(t);
+    totals[(parseISO(t.date).getDay() + 6) % 7] += spendOf(t);
   }
   const days = WEEKDAYS.map((day, i) => ({ day, average: totals[i] / weeks }));
   const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
@@ -676,14 +684,16 @@ export function smallPurchases(
   return monthWindows(months, now).map((w) => {
     const small = expensesIn(transactions, w.start, w.end).filter(
       (t) =>
-        magnitude(t) < limit && categoryKind(t.category, categories) !== "fixed"
+        spendOf(t) > 0 &&
+        spendOf(t) < limit &&
+        categoryKind(t.category, categories) !== "fixed"
     );
     return {
       label: w.label,
       start: w.start,
       partial: w.partial,
       count: small.length,
-      total: small.reduce((s, t) => s + magnitude(t), 0),
+      total: small.reduce((s, t) => s + spendOf(t), 0),
     };
   });
 }
@@ -709,7 +719,7 @@ export function foodSplit(
     const sumOf = (category: string) =>
       txs
         .filter((t) => t.category === category)
-        .reduce((s, t) => s + magnitude(t), 0);
+        .reduce((s, t) => s + spendOf(t), 0);
     const groceries = sumOf("Groceries");
     const dining = sumOf("Dining");
     const delivery = sumOf("Food Delivery");
@@ -750,7 +760,7 @@ export function savingsRateTrend(
     for (const t of transactions) {
       if (t.date < w.start || t.date > w.end) continue;
       if (t.type === "income") income += magnitude(t);
-      else if (t.type === "expense") spent += magnitude(t);
+      else spent += spendOf(t);
     }
     return {
       label: w.label,

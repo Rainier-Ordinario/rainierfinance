@@ -51,14 +51,15 @@ const NOW = new Date(2026, 6, 15);
 
 describe("budgetProgress", () => {
   const txs = [
-    tx({ amount: -50, date: "2026-07-01" }), // negative-stored expense
-    tx({ amount: 100, date: "2026-07-10" }), // positive-stored expense
+    tx({ amount: -50, date: "2026-07-01" }),
+    tx({ amount: -120, date: "2026-07-10" }),
+    tx({ amount: 20, date: "2026-07-12" }), // refund
     tx({ amount: -40, date: "2026-06-30" }), // previous month
     tx({ amount: -30, date: "2026-07-05", category: "Groceries" }), // other category
     tx({ amount: 500, date: "2026-07-08", type: "income", category: "Income" }),
   ];
 
-  it("sums matching expense magnitudes in the current period only", () => {
+  it("sums matching spending, net of refunds, in the current period only", () => {
     const p = budgetProgress(budget({}), txs, NOW);
     expect(p.spent).toBe(150);
     expect(p.remaining).toBe(160);

@@ -10,6 +10,7 @@ import {
 import { formatCAD } from "@/lib/utils/currency";
 import { currentMonthRange, toISODate } from "@/lib/utils/dates";
 import { budgetProgress } from "@/lib/utils/budgets";
+import { spendOf } from "@/lib/utils/aggregate";
 import { cn } from "@/lib/utils";
 import type { Budget, Transaction } from "@/types";
 
@@ -27,7 +28,7 @@ function spentBetween(
         t.date >= start &&
         t.date <= end
     )
-    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+    .reduce((s, t) => s + spendOf(t), 0);
 }
 
 export function BudgetsReview({

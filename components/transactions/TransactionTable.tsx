@@ -20,6 +20,7 @@ import {
   formatTransactionAmount,
 } from "@/lib/utils/currency";
 import { formatDate } from "@/lib/utils/dates";
+import { isRefund, spendOf } from "@/lib/utils/aggregate";
 import { cn } from "@/lib/utils";
 import { CategoryDot } from "@/components/dashboard/RecentTransactions";
 import type { Account, Category, Transaction } from "@/types";
@@ -71,19 +72,21 @@ export function TransactionTable({
   const groupByDay = sortKey === "date";
   const dayGroups = useMemo(() => {
     if (!groupByDay) return null;
-    // Signed day net: income adds, expenses subtract, transfers are neutral.
+    // Signed day net: income adds, spending subtracts (refunds add back),
+    // transfers are neutral.
     const signed = (t: Transaction) =>
-      t.type === "income"
-        ? Math.abs(Number(t.amount))
-        : t.type === "expense"
-          ? -Math.abs(Number(t.amount))
-          : 0;
+      t.type === "income" ? Math.abs(Number(t.amount)) : -spendOf(t);
     const groups: {
       date: string;
       net: number;
       rows: Transaction[];
       /** Set on the first group of each month visible on this page. */
-      monthHeader?: { label: string; income: number; expenses: number };
+      monthHeader?: {
+        label: string;
+        income: number;
+        expenses: number;
+        refunds: number;
+      };
     }[] = [];
     for (const t of pageRows) {
       const last = groups[groups.length - 1];
@@ -107,8 +110,11 @@ export function TransactionTable({
           .filter((t) => t.type === "income")
           .reduce((s, t) => s + Math.abs(Number(t.amount)), 0),
         expenses: monthRows
-          .filter((t) => t.type === "expense")
-          .reduce((s, t) => s + Math.abs(Number(t.amount)), 0),
+          .filter((t) => spendOf(t) > 0)
+          .reduce((s, t) => s + spendOf(t), 0),
+        refunds: monthRows
+          .filter(isRefund)
+          .reduce((s, t) => s + Number(t.amount), 0),
       };
     }
     return groups;
@@ -203,7 +209,7 @@ export function TransactionTable({
       <TableCell
         className={cn(
           "text-numeric text-right font-medium",
-          t.type === "income" && "text-success",
+          (t.type === "income" || isRefund(t)) && "text-success",
           t.type === "transfer" && "text-muted-foreground"
         )}
       >
@@ -213,11 +219,11 @@ export function TransactionTable({
         <Badge
           variant="secondary"
           className={cn(
-            t.type === "income" && "text-success",
+            (t.type === "income" || isRefund(t)) && "text-success",
             t.type === "transfer" && "text-muted-foreground"
           )}
         >
-          {t.type}
+          {isRefund(t) ? "refund" : t.type}
         </Badge>
       </TableCell>
       <TableCell className="text-right">
@@ -286,6 +292,16 @@ export function TransactionTable({
                               <span className="text-muted-foreground">
                                 out {formatCAD(g.monthHeader.expenses)}
                               </span>
+                              {g.monthHeader.refunds > 0 && (
+                                <>
+                                  <span className="mx-1.5 text-muted-foreground">
+                                    ·
+                                  </span>
+                                  <span className="text-success">
+                                    refunds {formatCAD(g.monthHeader.refunds)}
+                                  </span>
+                                </>
+                              )}
                             </span>
                           </div>
                         </TableCell>

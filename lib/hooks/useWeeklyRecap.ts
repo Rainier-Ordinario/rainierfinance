@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 import { toISODate } from "@/lib/utils/dates";
 import {
   categoryTotalsInRange,
+  spendOf,
   type CategoryTotal,
 } from "@/lib/utils/aggregate";
 import type { NetWorthSnapshot, Subscription, Transaction } from "@/types";
@@ -42,9 +43,7 @@ export interface PeriodRecap {
 }
 
 function sumExpenses(txs: Transaction[]): number {
-  return txs
-    .filter((t) => t.type === "expense")
-    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+  return txs.reduce((s, t) => s + spendOf(t), 0);
 }
 
 function sumIncome(txs: Transaction[]): number {

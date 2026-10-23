@@ -29,6 +29,7 @@ import { useBudgets } from "@/lib/hooks/useBudgets";
 import { useCategories } from "@/lib/hooks/useCategories";
 import { useTransactions } from "@/lib/hooks/useTransactions";
 import { budgetProgress } from "@/lib/utils/budgets";
+import { spendOf } from "@/lib/utils/aggregate";
 import {
   formatCAD,
   formatCADSigned,
@@ -154,9 +155,7 @@ export function RecapView({ period }: { period: Period }) {
       .map(([date, txs]) => ({
         date,
         txs,
-        spent: txs
-          .filter((t) => t.type === "expense")
-          .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0),
+        spent: txs.reduce((sum, t) => sum + spendOf(t), 0),
       }));
   }, [recap.data]);
 

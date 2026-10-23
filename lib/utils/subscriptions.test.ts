@@ -69,13 +69,13 @@ describe("detectRecurringCharges", () => {
     });
   });
 
-  it("handles mixed stored signs", () => {
-    const mixed = [
-      tx({ date: "2026-04-05", amount: -15.49 }),
+  it("ignores refunds when looking for recurring charges", () => {
+    const withRefunds = [
+      tx({ date: "2026-04-05", amount: 15.49 }),
       tx({ date: "2026-05-05", amount: 15.49 }),
-      tx({ date: "2026-06-05", amount: -15.49 }),
+      tx({ date: "2026-06-05", amount: 15.49 }),
     ];
-    expect(detectRecurringCharges(mixed, [])).toHaveLength(1);
+    expect(detectRecurringCharges(withRefunds, [])).toHaveLength(0);
   });
 
   it("skips merchants already tracked as subscriptions", () => {

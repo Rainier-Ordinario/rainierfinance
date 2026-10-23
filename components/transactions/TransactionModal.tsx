@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Minus, Plus } from "lucide-react";
+import { Minus, Plus, Undo2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -33,7 +33,7 @@ const schema = z.object({
   amount: z
     .number({ message: "Enter an amount" })
     .positive("Enter an amount above zero"),
-  isExpense: z.boolean(),
+  kind: z.enum(["expense", "income", "refund"]),
   description: z.string().min(1, "Required"),
   category: z.string().min(1, "Pick a category"),
   account_id: z.string().min(1, "Pick an account"),
@@ -65,7 +65,7 @@ export function TransactionModal({
     resolver: zodResolver(schema),
     defaultValues: {
       amount: undefined as unknown as number,
-      isExpense: true,
+      kind: "expense",
       description: "",
       category: "",
       account_id: "",
@@ -81,9 +81,13 @@ export function TransactionModal({
         editing
           ? {
               amount: Math.abs(Number(editing.amount)),
-              // The stored sign is unreliable (seed data is positive), so
-              // direction comes from `type`.
-              isExpense: editing.type !== "income",
+              // Expenses are stored negative; a positive expense is a refund.
+              kind:
+                editing.type === "income"
+                  ? "income"
+                  : Number(editing.amount) > 0
+                    ? "refund"
+                    : "expense",
               description: editing.description,
               category: editing.category,
               account_id: editing.account_id,
@@ -93,7 +97,7 @@ export function TransactionModal({
             }
           : {
               amount: undefined as unknown as number,
-              isExpense: true,
+              kind: "expense",
               description: "",
               category: "",
               account_id: accounts[0]?.id ?? "",
@@ -106,7 +110,9 @@ export function TransactionModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing]);
 
-  const isExpense = form.watch("isExpense");
+  const kind = form.watch("kind");
+  // Refunds are money back on spending, so they take spending categories.
+  const isExpense = kind !== "income";
 
   // "Transfer" isn't addable here, and "Income" only makes sense in income
   // mode.
@@ -114,31 +120,33 @@ export function TransactionModal({
     (c) => c.name !== "Transfer" && (!isExpense || c.name !== "Income")
   );
 
-  function setMode(expense: boolean) {
-    form.setValue("isExpense", expense);
+  function setMode(next: FormValues["kind"]) {
+    form.setValue("kind", next);
     const category = form.getValues("category");
-    if (!expense && !category) {
+    if (next === "income" && !category) {
       const income = categories.find((c) => c.name === "Income");
       if (income) form.setValue("category", income.name);
     }
-    if (expense && category === "Income") form.setValue("category", "");
+    if (next !== "income" && category === "Income") form.setValue("category", "");
   }
+
 
   function onSubmit(values: FormValues) {
     // Recategorizing an expense teaches the app this merchant's category.
     const recategorized =
       !!editing &&
-      values.isExpense &&
+      values.kind === "expense" &&
       editing.category !== values.category;
     upsert.mutate(
       {
         ...(editing ? { id: editing.id } : {}),
-        amount: values.isExpense ? -values.amount : values.amount,
+        // Expenses are stored negative; income and refunds positive.
+        amount: values.kind === "expense" ? -values.amount : values.amount,
         description: values.description,
         category: values.category,
         account_id: values.account_id,
         date: values.date,
-        type: values.isExpense ? "expense" : "income",
+        type: values.kind === "income" ? "income" : "expense",
         is_recurring: values.is_recurring,
         notes: values.notes || null,
       },
@@ -165,26 +173,32 @@ export function TransactionModal({
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant={isExpense ? "default" : "outline"}
-              className="flex-1"
-              onClick={() => setMode(true)}
-              aria-pressed={isExpense}
-            >
-              <Minus className="size-4" aria-hidden /> Expense
-            </Button>
-            <Button
-              type="button"
-              variant={!isExpense ? "default" : "outline"}
-              className="flex-1"
-              onClick={() => setMode(false)}
-              aria-pressed={!isExpense}
-            >
-              <Plus className="size-4" aria-hidden /> Income
-            </Button>
+          <div className="flex gap-2" role="group" aria-label="Transaction kind">
+            {(
+              [
+                { value: "expense", label: "Expense", Icon: Minus },
+                { value: "income", label: "Income", Icon: Plus },
+                { value: "refund", label: "Refund", Icon: Undo2 },
+              ] as const
+            ).map(({ value, label, Icon }) => (
+              <Button
+                key={value}
+                type="button"
+                variant={kind === value ? "default" : "outline"}
+                className="flex-1"
+                onClick={() => setMode(value)}
+                aria-pressed={kind === value}
+              >
+                <Icon className="size-4" aria-hidden /> {label}
+              </Button>
+            ))}
           </div>
+          {kind === "refund" && (
+            <p className="-mt-2 text-xs text-muted-foreground">
+              Money back from a purchase. It lowers spending in its category
+              instead of counting as income.
+            </p>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="tx-amount">Amount (CAD)</Label>

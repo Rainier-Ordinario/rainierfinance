@@ -22,7 +22,12 @@ class BudgetLinesTest(unittest.TestCase):
     def test_measures_spend_live_not_from_cached_column(self):
         budgets = [{"name": "Dining out", "period": "monthly", "category": "Dining",
                     "total_amount": 200, "spent_amount": 0}]
-        txs = [tx("2026-10-05", -150), tx("2026-09-30", -500), tx("2026-10-06", -40, "Groceries")]
+        txs = [
+            tx("2026-10-05", -170),
+            tx("2026-10-07", 20),  # refund
+            tx("2026-09-30", -500),
+            tx("2026-10-06", -40, "Groceries"),
+        ]
         [line] = insights.budget_lines(budgets, txs, TODAY)
         self.assertIn("spent $150 of $200", line)
         self.assertIn("on pace to go over", line)  # $150 by day 22 → ~$211

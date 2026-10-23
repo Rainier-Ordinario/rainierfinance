@@ -40,6 +40,7 @@ import { TransactionModal } from "@/components/transactions/TransactionModal";
 import { FilterPanel } from "@/components/transactions/FilterPanel";
 import { CSVImporter } from "@/components/transactions/CSVImporter";
 import { TrendPanel } from "@/components/transactions/TrendPanel";
+import { PossibleRefunds } from "@/components/transactions/PossibleRefunds";
 import {
   useBulkCategorize,
   useDeleteTransactions,
@@ -175,6 +176,8 @@ function TransactionsContent() {
           </>
         }
       />
+
+      <PossibleRefunds />
 
       <Tabs
         value={filters.type ?? "all"}

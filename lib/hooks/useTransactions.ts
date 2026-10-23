@@ -47,8 +47,8 @@ export function useTransactions(filters: TransactionFilters = {}) {
         floor.setMonth(floor.getMonth() - 24);
         query = query.gte("date", floor.toISOString().slice(0, 10));
       }
-      // Amount bounds are magnitudes; stored signs are mixed (imports store
-      // expenses negative, the seed positive), so match |amount| in [min, max].
+      // Amount bounds are magnitudes (expenses are stored negative, income
+      // and refunds positive), so match |amount| in [min, max].
       if (filters.amountMin !== undefined || filters.amountMax !== undefined) {
         const min = filters.amountMin ?? 0;
         const max = filters.amountMax ?? Number.MAX_SAFE_INTEGER;
@@ -260,6 +260,39 @@ export function useBulkCategorize() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       toast.success("Categorized");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+/**
+ * Reclassify income rows as refunds: positive expenses in the given
+ * category, so they lower that category's spending instead of adding income.
+ */
+export function useConvertToRefunds() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (rows: { id: string; category: string }[]) => {
+      const supabase = createClient();
+      const byCategory = new Map<string, string[]>();
+      for (const r of rows) {
+        byCategory.set(r.category, [...(byCategory.get(r.category) ?? []), r.id]);
+      }
+      for (const [category, ids] of byCategory) {
+        // Amounts stay positive: a positive expense is a refund.
+        const { error } = await supabase
+          .from("transactions")
+          .update({ type: "expense", category })
+          .in("id", ids);
+        if (error) throw error;
+      }
+      return rows.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      toast.success(
+        `Marked ${count} ${count === 1 ? "transaction" : "transactions"} as refunds`
+      );
     },
     onError: (err) => toast.error(err.message),
   });

@@ -21,6 +21,20 @@ export function netWorth(accounts: Account[]): number {
   return totalAssets(accounts) - totalLiabilities(accounts);
 }
 
+/**
+ * Net spending from one transaction. Expenses are stored negative and
+ * refunds as positive expenses, so a refund counts against spending.
+ * Income and transfers aren't spending.
+ */
+export function spendOf(t: Pick<Transaction, "type" | "amount">): number {
+  return t.type === "expense" ? -Number(t.amount) : 0;
+}
+
+/** A refund: money back from a merchant, stored as a positive expense. */
+export function isRefund(t: Pick<Transaction, "type" | "amount">): boolean {
+  return t.type === "expense" && Number(t.amount) > 0;
+}
+
 function inRange(t: Transaction, start: string, end: string): boolean {
   return t.date >= start && t.date <= end;
 }
@@ -32,7 +46,7 @@ export function monthlyExpenses(
 ): number {
   return transactions
     .filter((t) => t.type === "expense" && inRange(t, start, end))
-    .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
+    .reduce((sum, t) => sum + spendOf(t), 0);
 }
 
 export function monthlyIncome(
@@ -99,7 +113,10 @@ export interface CategoryTotal {
   amount: number;
 }
 
-/** Expense totals per category within a date range, biggest first. */
+/**
+ * Net spending per category within a date range, biggest first. A category
+ * whose refunds outweigh its purchases in the range is left out.
+ */
 export function categoryTotalsInRange(
   transactions: Transaction[],
   start: string,
@@ -108,12 +125,10 @@ export function categoryTotalsInRange(
   const totals = new Map<string, number>();
   for (const t of transactions) {
     if (t.type !== "expense" || !inRange(t, start, end)) continue;
-    totals.set(
-      t.category,
-      (totals.get(t.category) ?? 0) + Math.abs(Number(t.amount))
-    );
+    totals.set(t.category, (totals.get(t.category) ?? 0) + spendOf(t));
   }
   return [...totals.entries()]
+    .filter(([, amount]) => amount > 0)
     .map(([category, amount]) => ({ category, amount }))
     .sort((a, b) => b.amount - a.amount);
 }

@@ -66,14 +66,14 @@ describe("net worth", () => {
 
 describe("monthly income/expenses", () => {
   const txs = [
-    tx({ type: "expense", amount: -82.43, date: "2026-07-02" }), // import-style
-    tx({ type: "expense", amount: 20, date: "2026-07-05" }), // seed-style
+    tx({ type: "expense", amount: -122.43, date: "2026-07-02" }),
+    tx({ type: "expense", amount: 20, date: "2026-07-05" }), // refund
     tx({ type: "income", amount: 2000, date: "2026-07-03" }),
     tx({ type: "transfer", amount: -500, date: "2026-07-04" }),
     tx({ type: "expense", amount: -50, date: "2026-06-28" }), // out of range
   ];
 
-  it("sums expense magnitudes regardless of stored sign", () => {
+  it("nets refunds (positive expenses) against spending", () => {
     expect(monthlyExpenses(txs, "2026-07-01", "2026-07-31")).toBeCloseTo(
       102.43
     );

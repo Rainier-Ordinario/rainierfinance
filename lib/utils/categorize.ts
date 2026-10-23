@@ -180,3 +180,79 @@ export function applyMerchantRules<
     return learned ? { ...r, category: learned } : r;
   });
 }
+
+/** merchantKey → the category the user's purchases there are in. */
+export type KnownMerchants = Map<string, string>;
+
+/** Map each merchant the user has paid to the category of their latest purchase. */
+export function knownMerchantsFrom(
+  rows: { description: string; category: string; type: string; date?: string }[]
+): KnownMerchants {
+  const known: KnownMerchants = new Map();
+  const sorted = [...rows].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+  for (const r of sorted) {
+    const key = merchantKey(r.description);
+    if (r.type === "expense" && key) known.set(key, r.category);
+  }
+  return known;
+}
+
+/** Where a refund belongs: a learned rule, else the merchant's usual category. */
+export function refundCategory(
+  description: string,
+  knownMerchants: KnownMerchants,
+  rules: MerchantRules = {}
+): string {
+  const key = merchantKey(description);
+  return rules[key] ?? knownMerchants.get(key) ?? categorizeMerchant(description);
+}
+
+/** Credits that are clearly money back on a purchase. */
+const REFUND_RE = /refund|return|reversal|rebate|credit voucher|^offer\b|cash ?back/i;
+/** Credits that are clearly income or money moving, never a refund. */
+const INCOME_RE =
+  /payroll|salary|direct dep|interest|dividend|e-?transfer|transfer|deposit|bonus|tax refund|\bcra\b|gst|hst|ccb|pension/i;
+
+/**
+ * Whether a credit (positive amount) is a refund rather than income: it
+ * says so ("REFUND", "RETURN", a card "OFFER" credit), or it comes from a
+ * merchant the user pays or one the categorizer recognizes as a store.
+ * Paycheques, interest, and e-transfers are always income.
+ */
+export function looksLikeRefund(
+  description: string,
+  knownMerchants: KnownMerchants,
+  rules: MerchantRules = {}
+): boolean {
+  if (/tax refund|\bcra\b/i.test(description)) return false;
+  if (REFUND_RE.test(description)) return true;
+  if (INCOME_RE.test(description)) return false;
+  const key = merchantKey(description);
+  if (key && knownMerchants.has(key)) return true;
+  const category = categorizeMerchant(description, rules);
+  return category !== "Other" && category !== "Income";
+}
+
+/**
+ * Turn parsed credits that look like refunds into refunds: positive-amount
+ * expenses in the merchant's category, which lower spending there.
+ */
+export function classifyRefunds<
+  T extends { description: string; amount: number; category: string; type: string },
+>(rows: T[], knownMerchants: KnownMerchants, rules: MerchantRules = {}): T[] {
+  // Merchants paid within the same file count as known, too.
+  const known: KnownMerchants = new Map([
+    ...knownMerchants,
+    ...knownMerchantsFrom(rows),
+  ]);
+  return rows.map((r) =>
+    r.type === "income" && looksLikeRefund(r.description, known, rules)
+      ? {
+          ...r,
+          type: "expense",
+          amount: Math.abs(r.amount),
+          category: refundCategory(r.description, known, rules),
+        }
+      : r
+  );
+}

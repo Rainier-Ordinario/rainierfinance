@@ -110,7 +110,8 @@ export function detectRecurringCharges(
   const groups = new Map<string, Transaction[]>();
 
   for (const t of transactions) {
-    if (t.type !== "expense") continue;
+    // Purchases only: a refund isn't a charge.
+    if (t.type !== "expense" || Number(t.amount) > 0) continue;
     if (t.category && NON_SUBSCRIPTION_CATEGORIES.has(t.category)) continue;
     const key = merchantKey(t.description);
     if (!key) continue;
@@ -125,8 +126,7 @@ export function detectRecurringCharges(
     const months = new Set(sorted.map((t) => t.date.slice(0, 7)));
     if (months.size < 3) continue;
 
-    // Stored signs are mixed (imports negative, seed positive) — compare
-    // magnitudes.
+    // Charges are stored negative — compare magnitudes.
     const amounts = sorted.map((t) => Math.abs(Number(t.amount)));
     const min = Math.min(...amounts);
     const max = Math.max(...amounts);

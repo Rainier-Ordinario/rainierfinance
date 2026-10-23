@@ -24,9 +24,8 @@ export function formatCADSigned(amount: number): string {
 }
 
 /**
- * Display form of a transaction amount. Direction comes from the row's `type`,
- * never the stored sign — imports store expenses negative while the seed
- * stores them positive, so the raw sign is not trustworthy.
+ * Display form of a transaction amount. Income is always "+". Expenses are
+ * stored negative, so a positive expense is a refund and also shows "+".
  */
 export function formatTransactionAmount(
   amount: number,
@@ -34,7 +33,7 @@ export function formatTransactionAmount(
 ): string {
   const abs = cadFormatter.format(Math.abs(amount));
   if (type === "income") return `+${abs}`;
-  if (type === "expense") return `-${abs}`;
+  if (type === "expense") return amount > 0 ? `+${abs}` : `-${abs}`;
   return abs;
 }
 

@@ -65,7 +65,8 @@ describe("uncategorizedSummary", () => {
     const s = uncategorizedSummary(
       [
         tx({ category: "Other", amount: -25 }),
-        tx({ category: "Dining", amount: 75 }),
+        tx({ category: "Dining", amount: -85 }),
+        tx({ category: "Dining", amount: 10 }), // refund
         tx({ category: "Other", amount: -500, date: "2026-01-01" }),
         tx({ category: "Other", amount: 900, type: "income" }),
       ],

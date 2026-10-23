@@ -56,6 +56,17 @@ def magnitude(t: dict[str, Any]) -> float:
         return 0.0
 
 
+def spend_of(t: dict[str, Any]) -> float:
+    """Net spending, like spendOf() in lib/utils/aggregate.ts: expenses are
+    stored negative and refunds as positive expenses, so refunds subtract."""
+    if t.get("type") != "expense":
+        return 0.0
+    try:
+        return -float(t["amount"])
+    except (KeyError, TypeError, ValueError):
+        return 0.0
+
+
 def merchant_key(description: str) -> str:
     """Same normalization as merchantKey() in lib/utils/categorize.ts."""
     s = description.lower()
@@ -97,14 +108,14 @@ def income_total(txs: list[dict[str, Any]], start: date, end: date) -> float:
 def by_category(txs: list[dict[str, Any]]) -> dict[str, float]:
     totals: dict[str, float] = defaultdict(float)
     for t in txs:
-        totals[t.get("category") or UNCATEGORIZED] += magnitude(t)
+        totals[t.get("category") or UNCATEGORIZED] += spend_of(t)
     return totals
 
 
 def by_kind(txs: list[dict[str, Any]], kinds: dict[str, str]) -> dict[str, float]:
     totals = {"fixed": 0.0, "essential": 0.0, "discretionary": 0.0}
     for t in txs:
-        totals[category_kind(t.get("category") or "", kinds)] += magnitude(t)
+        totals[category_kind(t.get("category") or "", kinds)] += spend_of(t)
     return totals
 
 
@@ -132,7 +143,7 @@ def budget_lines(budgets: list[dict[str, Any]], txs: list[dict[str, Any]], today
         start, end = budget_period(b, today)
         category = b.get("category")
         spent = sum(
-            magnitude(t) for t in expenses(txs, start, end) if t.get("category") == category
+            spend_of(t) for t in expenses(txs, start, end) if t.get("category") == category
         ) if category else 0.0
         total = float(b.get("total_amount") or 0)
         days_total = (end - start).days + 1
@@ -225,22 +236,27 @@ def spending_insights(
             f"{money(usual)}/mo | {trend}"
         )
 
-    # Top merchants
+    # Top merchants (totals net of refunds; refunds aren't visits)
     merchants: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for t in usual_exp:
         key = merchant_key(t.get("description") or "")
         if key:
             merchants[key].append(t)
-    ranked = sorted(merchants.items(), key=lambda kv: -sum(magnitude(t) for t in kv[1]))
+    summaries = []
+    for key, mtxs in merchants.items():
+        purchases = [t for t in mtxs if spend_of(t) > 0]
+        total = sum(spend_of(t) for t in mtxs)
+        if purchases and total > 0:
+            category = Counter(t.get("category") for t in purchases).most_common(1)[0][0]
+            summaries.append((key, category, total, len(purchases)))
+    summaries.sort(key=lambda m: -m[2])
     lines.append(
         f"\n### Top merchants ({usual_start.isoformat()} to {usual_end.isoformat()}, 3 months)"
     )
-    for key, mtxs in ranked[:15]:
-        total = sum(magnitude(t) for t in mtxs)
-        category = Counter(t.get("category") for t in mtxs).most_common(1)[0][0]
+    for key, category, total, visits in summaries[:15]:
         lines.append(
-            f"- {key.title()} ({category}): {money(total)} over {len(mtxs)} visits, "
-            f"avg {money(total / len(mtxs))}"
+            f"- {key.title()} ({category}): {money(total)} over {visits} visits, "
+            f"avg {money(total / visits)}"
         )
 
     # Savings rate by month
@@ -249,15 +265,15 @@ def spending_insights(
         start = month_start(today, back)
         end = month_end(start)
         inc = income_total(txs, start, end)
-        spent = sum(magnitude(t) for t in expenses(txs, start, end))
+        spent = sum(spend_of(t) for t in expenses(txs, start, end))
         rate = f"{(inc - spent) / inc * 100:.0f}%" if inc > 0 else "no income"
         lines.append(f"- {start.strftime('%b %Y')}: income {money(inc)}, spent {money(spent)}, kept {rate}")
 
     # Uncategorized
     window_start = today - timedelta(days=90)
     recent = expenses(txs, window_start, today)
-    total_recent = sum(magnitude(t) for t in recent)
-    stuck = sum(magnitude(t) for t in recent if (t.get("category") or UNCATEGORIZED) == UNCATEGORIZED)
+    total_recent = sum(spend_of(t) for t in recent)
+    stuck = sum(spend_of(t) for t in recent if (t.get("category") or UNCATEGORIZED) == UNCATEGORIZED)
     if total_recent > 0 and stuck > 0:
         lines.append(
             f"\n- Uncategorized ('Other') spending in the last 90 days: {money(stuck)} "

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
 import { toast } from "sonner";
 import { FileUp, Loader2, Plus, Upload } from "lucide-react";
@@ -41,7 +41,10 @@ import { useUpsertAccount } from "@/lib/hooks/useAccounts";
 import {
   applyMerchantRules,
   categorizeMerchant,
+  classifyRefunds,
+  knownMerchantsFrom,
 } from "@/lib/utils/categorize";
+import { useTransactions } from "@/lib/hooks/useTransactions";
 import { useMerchantRules } from "@/lib/hooks/useMerchantRules";
 import {
   detectSubscriptionCandidates,
@@ -67,6 +70,12 @@ export function CSVImporter({
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const merchantRules = useMerchantRules();
+  const existing = useTransactions();
+  // Merchants the user already pays: a credit from one of them is a refund.
+  const knownMerchants = useMemo(
+    () => knownMerchantsFrom(existing.data ?? []),
+    [existing.data]
+  );
   const [rows, setRows] = useState<ParsedCsvTransaction[]>([]);
   const [rawGrid, setRawGrid] = useState<string[][]>([]);
   const [mapping, setMapping] = useState<Record<number, ColumnKey>>({});
@@ -149,7 +158,13 @@ export function CSVImporter({
       if (looksLikeRbcCsv(header)) {
         const { transactions, errors, detectedAccounts: detected } =
           parseRbcCsv(text);
-        setRows(applyMerchantRules(transactions, merchantRules));
+        setRows(
+          classifyRefunds(
+            applyMerchantRules(transactions, merchantRules),
+            knownMerchants,
+            merchantRules
+          )
+        );
         setParseErrors(errors);
         setDetectedAccounts(detected);
         setNeedsMapping(false);
@@ -223,7 +238,7 @@ export function CSVImporter({
         type: amount > 0 ? "income" : "expense",
       });
     });
-    setRows(parsed);
+    setRows(classifyRefunds(parsed, knownMerchants, merchantRules));
     setParseErrors(errors);
     setNeedsMapping(false);
   }
