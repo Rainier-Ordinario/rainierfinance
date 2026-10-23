@@ -4,6 +4,9 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { CardSkeleton } from "@/components/shared/CardSkeleton";
 import { CategoryTrends } from "@/components/insights/CategoryTrends";
 import { TopMerchants } from "@/components/insights/TopMerchants";
+import { SpendingPatterns } from "@/components/insights/SpendingPatterns";
+import { MoneyFlow } from "@/components/insights/MoneyFlow";
+import { SavingsTrend } from "@/components/insights/SavingsTrend";
 import { useTransactions } from "@/lib/hooks/useTransactions";
 import { useCategories } from "@/lib/hooks/useCategories";
 
@@ -25,11 +28,20 @@ export default function InsightsPage() {
         </div>
       ) : (
         <div className="space-y-4">
+          <MoneyFlow
+            transactions={transactions.data ?? []}
+            categories={categories.data ?? []}
+          />
+          <SavingsTrend transactions={transactions.data ?? []} />
           <CategoryTrends
             transactions={transactions.data ?? []}
             categories={categories.data ?? []}
           />
           <TopMerchants
+            transactions={transactions.data ?? []}
+            categories={categories.data ?? []}
+          />
+          <SpendingPatterns
             transactions={transactions.data ?? []}
             categories={categories.data ?? []}
           />

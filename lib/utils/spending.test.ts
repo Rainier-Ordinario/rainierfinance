@@ -3,7 +3,12 @@ import {
   categoryBreakdown,
   categoryKind,
   categoryTrends,
+  foodSplit,
+  moneyFlow,
   safeToSpend,
+  savingsRateTrend,
+  smallPurchases,
+  weekdayPattern,
   spendingMix,
   topMerchants,
   uncategorizedSummary,
@@ -272,5 +277,109 @@ describe("whatChanged", () => {
     );
     expect(result.down).toEqual([]);
     expect(result.up.map((c) => c.category)).toEqual(["Food Delivery"]);
+  });
+});
+
+describe("habits", () => {
+  it("averages discretionary spend by weekday over complete weeks", () => {
+    // now = Thu Oct 22; last complete week ends Sun Oct 18.
+    const p = weekdayPattern(
+      [
+        tx({ date: "2026-10-17", amount: -120 }), // Sat
+        tx({ date: "2026-10-18", amount: -60 }), // Sun
+        tx({ date: "2026-10-14", amount: -30 }), // Wed
+        tx({ date: "2026-10-14", category: "Bills", amount: -900 }), // not discretionary
+        tx({ date: "2026-10-20", amount: -500 }), // this week: excluded
+      ],
+      [],
+      2,
+      now
+    );
+    expect(p.days.map((d) => d.average)).toEqual([0, 0, 15, 0, 0, 60, 30]);
+    expect(p.weekendAverage).toBe(45);
+    expect(p.weekdayAverage).toBe(3);
+  });
+
+  it("counts small non-bill purchases per month", () => {
+    const months = smallPurchases(
+      [
+        tx({ date: "2026-10-02", amount: -6 }),
+        tx({ date: "2026-10-03", amount: -9 }),
+        tx({ date: "2026-10-04", amount: -40 }),
+        tx({ date: "2026-10-05", category: "Streaming", amount: -12 }),
+        tx({ date: "2026-09-05", amount: -14.99 }),
+      ],
+      [],
+      2,
+      15,
+      now
+    );
+    expect(months).toMatchObject([
+      { label: "Sep", count: 1, total: 14.99, partial: false },
+      { label: "Oct", count: 2, total: 15, partial: true },
+    ]);
+  });
+
+  it("splits food spending into groceries, dining, and delivery", () => {
+    const [sep, oct] = foodSplit(
+      [
+        tx({ date: "2026-09-05", category: "Groceries", amount: -300 }),
+        tx({ date: "2026-09-06", category: "Dining", amount: -50 }),
+        tx({ date: "2026-09-07", category: "Food Delivery", amount: -150 }),
+      ],
+      2,
+      now
+    );
+    expect(sep).toMatchObject({ groceries: 300, dining: 50, delivery: 150, deliveryShare: 30 });
+    expect(oct.deliveryShare).toBeNull();
+  });
+});
+
+describe("savings and money flow", () => {
+  const income = (date: string, amount: number) =>
+    tx({ date, amount, type: "income", category: "Income" });
+
+  it("computes a monthly savings rate, null without income", () => {
+    const months = savingsRateTrend(
+      [
+        income("2026-09-15", 4000),
+        tx({ date: "2026-09-02", category: "Bills", amount: -1000 }),
+        tx({ date: "2026-09-03", amount: -600 }),
+        tx({ date: "2026-09-04", type: "transfer", category: "Investments", amount: -500 }),
+        tx({ date: "2026-08-03", amount: -100 }),
+      ],
+      3,
+      now
+    );
+    expect(months.map((m) => m.rate)).toEqual([null, 60, null]);
+    expect(months[1]).toMatchObject({ income: 4000, spent: 1600, saved: 2400 });
+  });
+
+  it("splits spending by group and folds small categories", () => {
+    const flow = moneyFlow(
+      [
+        income("2026-09-15", 3000),
+        tx({ date: "2026-09-02", category: "Bills", amount: -1200 }),
+        tx({ date: "2026-09-03", category: "Groceries", amount: -400 }),
+        tx({ date: "2026-09-04", category: "Dining", amount: -200 }),
+        tx({ date: "2026-09-05", category: "Shopping", amount: -100 }),
+        tx({ date: "2026-09-06", category: "Entertainment", amount: -50 }),
+      ],
+      [],
+      "2026-09-01",
+      "2026-09-30",
+      2
+    );
+    expect(flow).toMatchObject({ income: 3000, spent: 1950, saved: 1050 });
+    expect(flow.groups.map((g) => [g.kind, g.total])).toEqual([
+      ["fixed", 1200],
+      ["essential", 400],
+      ["discretionary", 350],
+    ]);
+    expect(flow.groups[2].categories).toEqual([
+      { name: "Dining", amount: 200 },
+      { name: "Shopping", amount: 100 },
+      { name: "Other discretionary", amount: 50 },
+    ]);
   });
 });

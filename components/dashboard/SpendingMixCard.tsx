@@ -16,7 +16,7 @@ import type { Category, CategoryKind, Transaction } from "@/types";
 
 const KINDS: CategoryKind[] = ["fixed", "essential", "discretionary"];
 
-const KIND_COLORS: Record<CategoryKind, string> = {
+export const KIND_COLORS: Record<CategoryKind, string> = {
   fixed: "var(--chart-5)",
   essential: "var(--chart-2)",
   discretionary: "var(--chart-1)",

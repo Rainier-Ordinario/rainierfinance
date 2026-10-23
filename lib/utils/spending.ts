@@ -2,9 +2,12 @@ import {
   endOfMonth,
   format,
   getDate,
+  parseISO,
   startOfMonth,
+  startOfWeek,
   subDays,
   subMonths,
+  subWeeks,
 } from "date-fns";
 import { categoryTotalsInRange, type CategoryTotal } from "@/lib/utils/aggregate";
 import { merchantKey } from "@/lib/utils/categorize";
@@ -299,15 +302,7 @@ export function categoryTrends(
   months = 12,
   now = new Date()
 ): CategoryTrend[] {
-  const windows = Array.from({ length: months }, (_, i) => {
-    const d = subMonths(now, months - 1 - i);
-    return {
-      label: format(d, "MMM"),
-      start: toISODate(startOfMonth(d)),
-      end: toISODate(endOfMonth(d)),
-      partial: i === months - 1,
-    };
-  });
+  const windows = monthWindows(months, now);
 
   const byCategory = new Map<string, number[]>();
   for (const t of transactions) {
@@ -600,4 +595,229 @@ export function whatChanged(
     totalDiff: totalNow - usualTotal,
     usualTotal,
   };
+}
+
+// ---------- Habits ----------
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+export interface WeekdayPattern {
+  days: { day: string; average: number }[];
+  /** Average discretionary spend on a Saturday or Sunday. */
+  weekendAverage: number;
+  /** Average discretionary spend on a Monday–Friday. */
+  weekdayAverage: number;
+  weeks: number;
+}
+
+/**
+ * Average discretionary spend per weekday over the last `weeks` complete
+ * Monday–Sunday weeks: the shape of when wants get bought.
+ */
+export function weekdayPattern(
+  transactions: Transaction[],
+  categories: Category[],
+  weeks = 12,
+  now = new Date()
+): WeekdayPattern {
+  const thisMonday = startOfWeek(now, { weekStartsOn: 1 });
+  const start = toISODate(subWeeks(thisMonday, weeks));
+  const end = toISODate(subDays(thisMonday, 1));
+  const totals = new Array(7).fill(0);
+  for (const t of expensesIn(transactions, start, end)) {
+    if (categoryKind(t.category, categories) !== "discretionary") continue;
+    // getDay: Sunday = 0; shift so Monday = 0.
+    totals[(parseISO(t.date).getDay() + 6) % 7] += magnitude(t);
+  }
+  const days = WEEKDAYS.map((day, i) => ({ day, average: totals[i] / weeks }));
+  const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
+  return {
+    days,
+    weekendAverage: sum(totals.slice(5)) / (2 * weeks),
+    weekdayAverage: sum(totals.slice(0, 5)) / (5 * weeks),
+    weeks,
+  };
+}
+
+export interface MonthlyCount {
+  label: string;
+  start: string;
+  partial: boolean;
+  count: number;
+  total: number;
+}
+
+/** The last `months` months (current month last, flagged partial). */
+function monthWindows(months: number, now: Date) {
+  return Array.from({ length: months }, (_, i) => {
+    const d = subMonths(now, months - 1 - i);
+    return {
+      label: format(d, "MMM"),
+      start: toISODate(startOfMonth(d)),
+      end: toISODate(endOfMonth(d)),
+      partial: i === months - 1,
+    };
+  });
+}
+
+export const SMALL_PURCHASE_LIMIT = 15;
+
+/**
+ * Non-bill purchases under `limit` each month: individually forgettable,
+ * together often a real line item.
+ */
+export function smallPurchases(
+  transactions: Transaction[],
+  categories: Category[],
+  months = 6,
+  limit = SMALL_PURCHASE_LIMIT,
+  now = new Date()
+): MonthlyCount[] {
+  return monthWindows(months, now).map((w) => {
+    const small = expensesIn(transactions, w.start, w.end).filter(
+      (t) =>
+        magnitude(t) < limit && categoryKind(t.category, categories) !== "fixed"
+    );
+    return {
+      label: w.label,
+      start: w.start,
+      partial: w.partial,
+      count: small.length,
+      total: small.reduce((s, t) => s + magnitude(t), 0),
+    };
+  });
+}
+
+export interface FoodMonth {
+  label: string;
+  partial: boolean;
+  groceries: number;
+  dining: number;
+  delivery: number;
+  /** Delivery as a share of all food spending, 0–100; null with no food spend. */
+  deliveryShare: number | null;
+}
+
+/** How food money splits between groceries, eating out, and delivery. */
+export function foodSplit(
+  transactions: Transaction[],
+  months = 6,
+  now = new Date()
+): FoodMonth[] {
+  return monthWindows(months, now).map((w) => {
+    const txs = expensesIn(transactions, w.start, w.end);
+    const sumOf = (category: string) =>
+      txs
+        .filter((t) => t.category === category)
+        .reduce((s, t) => s + magnitude(t), 0);
+    const groceries = sumOf("Groceries");
+    const dining = sumOf("Dining");
+    const delivery = sumOf("Food Delivery");
+    const food = groceries + dining + delivery;
+    return {
+      label: w.label,
+      partial: w.partial,
+      groceries,
+      dining,
+      delivery,
+      deliveryShare: food > 0 ? (delivery / food) * 100 : null,
+    };
+  });
+}
+
+// ---------- Savings and money flow ----------
+
+export interface SavingsMonth {
+  label: string;
+  start: string;
+  partial: boolean;
+  income: number;
+  spent: number;
+  saved: number;
+  /** Share of income not spent, as a percent; null without income. */
+  rate: number | null;
+}
+
+/** Income kept each month: (income − spending) ÷ income. */
+export function savingsRateTrend(
+  transactions: Transaction[],
+  months = 12,
+  now = new Date()
+): SavingsMonth[] {
+  return monthWindows(months, now).map((w) => {
+    let income = 0;
+    let spent = 0;
+    for (const t of transactions) {
+      if (t.date < w.start || t.date > w.end) continue;
+      if (t.type === "income") income += magnitude(t);
+      else if (t.type === "expense") spent += magnitude(t);
+    }
+    return {
+      label: w.label,
+      start: w.start,
+      partial: w.partial,
+      income,
+      spent,
+      saved: income - spent,
+      rate: income > 0 ? ((income - spent) / income) * 100 : null,
+    };
+  });
+}
+
+export interface FlowGroup {
+  kind: CategoryKind;
+  total: number;
+  /** Biggest categories first, the rest folded into one entry. */
+  categories: { name: string; amount: number }[];
+}
+
+export interface MoneyFlow {
+  income: number;
+  spent: number;
+  /** income − spent; negative means savings were drawn down. */
+  saved: number;
+  groups: FlowGroup[];
+}
+
+/**
+ * Where income went in a date range: into fixed bills, essentials, and
+ * discretionary spending (each broken into its top categories), with the
+ * remainder saved.
+ */
+export function moneyFlow(
+  transactions: Transaction[],
+  categories: Category[],
+  start: string,
+  end: string,
+  perGroup = 4
+): MoneyFlow {
+  let income = 0;
+  for (const t of transactions) {
+    if (t.type === "income" && t.date >= start && t.date <= end) {
+      income += magnitude(t);
+    }
+  }
+  const totals = categoryTotalsInRange(transactions, start, end);
+  const kinds: CategoryKind[] = ["fixed", "essential", "discretionary"];
+  const groups = kinds
+    .map((kind) => {
+      const rows = totals.filter(
+        (c) => categoryKind(c.category, categories) === kind
+      );
+      const top = rows
+        .slice(0, perGroup)
+        .map((c) => ({ name: c.category, amount: c.amount }));
+      const rest = rows.slice(perGroup).reduce((s, c) => s + c.amount, 0);
+      if (rest > 0) {
+        top.push({ name: `Other ${KIND_LABELS[kind].toLowerCase()}`, amount: rest });
+      }
+      return {
+        kind,
+        total: rows.reduce((s, c) => s + c.amount, 0),
+        categories: top,
+      };
+    })
+    .filter((g) => g.total > 0);
+  const spent = groups.reduce((s, g) => s + g.total, 0);
+  return { income, spent, saved: income - spent, groups };
 }
