@@ -6,6 +6,9 @@
  * Usage:
  *   npm run seed -- --email you@example.com   # seed an existing signed-up user
  *   npm run seed                              # create + seed dev@rainierfinance.test
+ *
+ * Creating the dev user needs SEED_DEV_PASSWORD (in .env.local or the
+ * environment). It is never hardcoded: this repo is public.
  */
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
@@ -52,14 +55,21 @@ async function resolveUserId(): Promise<string> {
     );
     process.exit(1);
   }
+  const password = process.env.SEED_DEV_PASSWORD;
+  if (!password || password.length < 12) {
+    console.error(
+      "Set SEED_DEV_PASSWORD (12+ characters) in .env.local to create the dev user."
+    );
+    process.exit(1);
+  }
   const { data: created, error: createError } =
     await supabase.auth.admin.createUser({
       email: DEV_EMAIL,
-      password: "rainier-dev-password",
+      password,
       email_confirm: true,
     });
   if (createError) throw createError;
-  console.log(`Created dev user ${DEV_EMAIL} (password: rainier-dev-password)`);
+  console.log(`Created dev user ${DEV_EMAIL} (password from SEED_DEV_PASSWORD)`);
   return created.user.id;
 }
 
@@ -250,10 +260,13 @@ async function main() {
       if (date > iso(today)) continue; // skip future days this month
       // small variation so months don't look copy-pasted (fixed jitter, not random)
       const jitter = t.type === "income" || t.recurring ? 0 : ((t.day * (m + 3)) % 7) - 3;
+      const amount = Math.round((t.amount + jitter) * 100) / 100;
       transactions.push({
         user_id: userId,
         account_id: t.account,
-        amount: Math.round((t.amount + jitter) * 100) / 100,
+        // Money out is stored negative, like imports (a positive expense
+        // would read as a refund).
+        amount: t.type === "income" ? amount : -amount,
         description: t.description,
         category: t.category,
         date,
