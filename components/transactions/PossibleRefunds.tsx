@@ -67,7 +67,10 @@ export function PossibleRefunds() {
   }
 
   return (
-    <div className="mb-4 rounded-xl border bg-card px-4 py-3">
+    <section
+      aria-label="Possible refunds"
+      className="mb-4 rounded-xl border bg-card px-4 py-3"
+    >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Undo2 className="hidden size-5 shrink-0 text-warning sm:block" aria-hidden />
         <p className="flex-1 text-sm">
@@ -141,6 +144,6 @@ export function PossibleRefunds() {
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }

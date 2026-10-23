@@ -10,9 +10,12 @@ Built for the Canadian banking stack I use every day (RBC, Wealthsimple, Coinbas
 ## Features
 
 - **CSV import for real bank exports** — parsers for RBC (chequing + Visa), Wealthsimple holdings reports, and Coinbase transaction history, with duplicate detection so re-importing the same file never double-counts.
-- **Automatic categorization** — a rule-based merchant categorizer, plus detection of internal transfers so moving money between accounts isn't counted as spending.
+- **Automatic categorization** — a rule-based merchant categorizer that learns from your corrections, detection of internal transfers so moving money between accounts isn't counted as spending, and refund detection so money back lowers spending instead of counting as income.
+- **Insights** — where income goes (fixed bills, essentials, wants, saved), savings rate over time, 12-month category trends, top merchants with per-merchant history, and habits such as weekday spending and small purchases.
+- **Daily guidance** — a "safe to spend today" number, a fixed / essentials / discretionary split paced against last month, "what changed" in each recap, and an alerts bell for budgets, renewals, and price increases.
+- **Goals & challenges** — savings goals with the monthly pace a deadline needs, emergency-fund runway, and monthly challenges (category caps, no-spend days).
 - **Subscription detection** — flags recurring charges (same merchant, same amount) and tracks upcoming billing dates.
-- **Budgets** — weekly, monthly, and yearly budgets with spending computed live from transactions.
+- **Budgets** — weekly, monthly, and yearly budgets with spending computed live from transactions, and suggested amounts from your own history.
 - **Investments & crypto** — holdings, allocation charts, a portfolio health grade (single-stock concentration, overlapping ETFs), and live crypto prices converted to CAD.
 - **Credit cards** — utilization tracking, payment schedule, and a "which card should I use?" recommender per spending category.
 - **Net worth** — snapshots over time with an asset/liability breakdown.
@@ -84,7 +87,7 @@ scripts/        Seed and reset scripts for local development
    NEXT_PUBLIC_PYTHON_API_URL=http://localhost:8000
    ```
 
-4. **Seed demo data** (optional) — creates a dev user with realistic sample transactions:
+4. **Seed demo data** (optional) — creates a dev user with realistic sample transactions. Set `SEED_DEV_PASSWORD` (12+ characters) in `.env.local` first:
    ```bash
    npm run seed
    ```
@@ -99,7 +102,11 @@ scripts/        Seed and reset scripts for local development
 ## Tests
 
 ```bash
-npm test
+npm test                                         # unit tests (Vitest)
+cd api && python -m unittest test_insights       # AI Advisor insight math
+npm run test:e2e                                 # browser tests (Playwright)
 ```
 
-61 unit tests cover the CSV parsers, budget math, date handling, aggregation, and subscription detection.
+Unit tests cover the CSV parsers, categorization and refund detection, budget and goal math, spending insights, challenges, alerts, and subscription detection.
+
+The end-to-end tests run against the Supabase project in `.env.local`: they create a throwaway user with synthetic data, sign in, exercise the main flows (dashboard, insights, refunds, budgets, alerts, subscriptions), and delete the user afterwards. They never touch your own account. CI (`.github/workflows/ci.yml`) runs lint, types, and unit tests on every push; the end-to-end job runs once you add the Supabase secrets and set the `E2E_ENABLED` repository variable.
