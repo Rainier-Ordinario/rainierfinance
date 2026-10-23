@@ -7,6 +7,7 @@ import {
   spendingMix,
   topMerchants,
   uncategorizedSummary,
+  whatChanged,
 } from "@/lib/utils/spending";
 import type { Category, Transaction } from "@/types";
 
@@ -224,5 +225,52 @@ describe("safeToSpend", () => {
     expect(s.dailyAllowance).toBe(0);
     expect(s.remaining).toBeLessThan(0);
     expect(safeToSpend([tx({})], [], 20, now)).toBeNull();
+  });
+});
+
+describe("whatChanged", () => {
+  const sep = { start: "2026-09-01", end: "2026-09-30" };
+  const baselines = [
+    { start: "2026-06-01", end: "2026-06-30" },
+    { start: "2026-07-01", end: "2026-07-31" },
+    { start: "2026-08-01", end: "2026-08-31" },
+  ];
+  const usualMonths = ["06", "07", "08"].flatMap((m) => [
+    tx({ date: `2026-${m}-05`, category: "Food Delivery", description: "DOORDASH", amount: -100 }),
+    tx({ date: `2026-${m}-06`, category: "Shopping", description: "AMAZON.CA", amount: -200 }),
+    tx({ date: `2026-${m}-07`, category: "Groceries", description: "SAVE-ON-FOODS", amount: -400 }),
+  ]);
+
+  it("finds the biggest movers and the merchants behind them", () => {
+    const result = whatChanged(
+      [
+        ...usualMonths,
+        tx({ date: "2026-09-05", category: "Food Delivery", description: "DOORDASH", amount: -150 }),
+        tx({ date: "2026-09-12", category: "Food Delivery", description: "UBER EATS 22", amount: -60 }),
+        tx({ date: "2026-09-06", category: "Shopping", description: "AMAZON.CA", amount: -50 }),
+        tx({ date: "2026-09-07", category: "Groceries", description: "SAVE-ON-FOODS", amount: -410 }),
+      ],
+      sep,
+      baselines
+    );
+    expect(result.up).toHaveLength(1);
+    expect(result.up[0]).toMatchObject({ category: "Food Delivery", amount: 210, usual: 100, diff: 110 });
+    expect(result.up[0].merchants.map((m) => m.name)).toEqual(["Uber Eats", "Doordash"]);
+    expect(result.down[0]).toMatchObject({ category: "Shopping", diff: -150, pct: -0.75 });
+    // Groceries +$10 is noise, not a change.
+    expect([...result.up, ...result.down].map((c) => c.category)).not.toContain("Groceries");
+    expect(result.usualTotal).toBe(700);
+    expect(result.totalDiff).toBe(670 - 700);
+  });
+
+  it("only reports increases for a period still in progress", () => {
+    const result = whatChanged(
+      [...usualMonths, tx({ date: "2026-09-05", category: "Food Delivery", description: "DOORDASH", amount: -150 })],
+      sep,
+      baselines,
+      { partial: true }
+    );
+    expect(result.down).toEqual([]);
+    expect(result.up.map((c) => c.category)).toEqual(["Food Delivery"]);
   });
 });

@@ -19,6 +19,7 @@ import {
 } from "@/components/shared/CardSkeleton";
 import { CategoryIcon } from "@/components/shared/CategoryIcon";
 import { SpendingDonut } from "@/components/dashboard/SpendingDonut";
+import { WhatChangedCard } from "@/components/dashboard/WhatChangedCard";
 import {
   useMonthlyRecap,
   useWeeklyRecap,
@@ -293,6 +294,17 @@ export function RecapView({ period }: { period: Period }) {
               </CardContent>
             </Card>
           </div>
+
+          {transactions.data && (
+            <WhatChangedCard
+              transactions={transactions.data}
+              categories={categories.data ?? []}
+              period={period}
+              start={data.start}
+              end={data.end}
+              isCurrent={isCurrent}
+            />
+          )}
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             {/* Category breakdown (reuses the dashboard donut) */}

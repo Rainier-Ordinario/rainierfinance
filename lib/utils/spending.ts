@@ -471,3 +471,130 @@ export function safeToSpend(
     remaining,
   };
 }
+
+// ---------- What changed ----------
+
+export interface MerchantChange {
+  name: string;
+  amount: number;
+  usual: number;
+  diff: number;
+}
+
+export interface CategoryChange {
+  category: string;
+  amount: number;
+  /** Average per period over the comparison periods. */
+  usual: number;
+  diff: number;
+  /** usual > 0 → diff / usual; null for a category with no usual spend. */
+  pct: number | null;
+  /** Merchants that moved most in the same direction, biggest first. */
+  merchants: MerchantChange[];
+}
+
+export interface WhatChanged {
+  up: CategoryChange[];
+  down: CategoryChange[];
+  /** Total spending in the period minus the usual total. */
+  totalDiff: number;
+  usualTotal: number;
+}
+
+/** A change has to clear both of these to be worth calling out. */
+const MIN_CHANGE_DOLLARS = 20;
+const MIN_CHANGE_PCT = 0.1;
+
+function isNotable(diff: number, usual: number): boolean {
+  return (
+    Math.abs(diff) >= MIN_CHANGE_DOLLARS &&
+    Math.abs(diff) >= usual * MIN_CHANGE_PCT
+  );
+}
+
+/**
+ * Which categories (and the merchants inside them) moved most in a period
+ * against their average over `baselines` — equal-length periods just before
+ * it. For a period still in progress, pass `partial` and only increases are
+ * reported: being under usual mid-month usually just means it isn't over.
+ */
+export function whatChanged(
+  transactions: Transaction[],
+  period: { start: string; end: string },
+  baselines: { start: string; end: string }[],
+  { partial = false, limit = 3, merchantLimit = 2 } = {}
+): WhatChanged {
+  const inPeriod = expensesIn(transactions, period.start, period.end);
+  const inBaselines = baselines.flatMap((b) =>
+    expensesIn(transactions, b.start, b.end)
+  );
+  const n = Math.max(1, baselines.length);
+
+  const sumBy = (txs: Transaction[], keyOf: (t: Transaction) => string) => {
+    const totals = new Map<string, number>();
+    for (const t of txs) {
+      const key = keyOf(t);
+      totals.set(key, (totals.get(key) ?? 0) + magnitude(t));
+    }
+    return totals;
+  };
+
+  const current = sumBy(inPeriod, (t) => t.category);
+  const usual = sumBy(inBaselines, (t) => t.category);
+  const categories = new Set([...current.keys(), ...usual.keys()]);
+
+  const changes: CategoryChange[] = [];
+  for (const category of categories) {
+    const amount = current.get(category) ?? 0;
+    const avg = (usual.get(category) ?? 0) / n;
+    const diff = amount - avg;
+    if (!isNotable(diff, avg) || (partial && diff < 0)) continue;
+
+    const nowByMerchant = sumBy(
+      inPeriod.filter((t) => t.category === category),
+      (t) => merchantKey(t.description)
+    );
+    const usualByMerchant = sumBy(
+      inBaselines.filter((t) => t.category === category),
+      (t) => merchantKey(t.description)
+    );
+    const merchants = [
+      ...new Set([...nowByMerchant.keys(), ...usualByMerchant.keys()]),
+    ]
+      .filter(Boolean)
+      .map((key) => {
+        const m = nowByMerchant.get(key) ?? 0;
+        const u = (usualByMerchant.get(key) ?? 0) / n;
+        return { name: titleCase(key), amount: m, usual: u, diff: m - u };
+      })
+      // Same direction as the category, and big enough to explain part of it.
+      .filter((m) => Math.sign(m.diff) === Math.sign(diff) && Math.abs(m.diff) >= 5)
+      .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+      .slice(0, merchantLimit);
+
+    changes.push({
+      category,
+      amount,
+      usual: avg,
+      diff,
+      pct: avg > 0 ? diff / avg : null,
+      merchants,
+    });
+  }
+
+  const totalNow = [...current.values()].reduce((s, x) => s + x, 0);
+  const usualTotal = [...usual.values()].reduce((s, x) => s + x, 0) / n;
+
+  return {
+    up: changes
+      .filter((c) => c.diff > 0)
+      .sort((a, b) => b.diff - a.diff)
+      .slice(0, limit),
+    down: changes
+      .filter((c) => c.diff < 0)
+      .sort((a, b) => a.diff - b.diff)
+      .slice(0, limit),
+    totalDiff: totalNow - usualTotal,
+    usualTotal,
+  };
+}
