@@ -1,5 +1,6 @@
 import {
   differenceInCalendarDays,
+  differenceInCalendarMonths,
   endOfMonth,
   endOfWeek,
   endOfYear,
@@ -7,9 +8,15 @@ import {
   startOfMonth,
   startOfWeek,
   startOfYear,
+  subMonths,
 } from "date-fns";
 import { toISODate } from "@/lib/utils/dates";
-import type { Budget, Transaction } from "@/types";
+import {
+  categoryKind,
+  NOT_SPENDING,
+  UNCATEGORIZED,
+} from "@/lib/utils/spending";
+import type { Budget, Category, Transaction } from "@/types";
 
 /** Current period window for a budget (weekly weeks start Monday). */
 export function budgetPeriodRange(budget: Budget, now = new Date()) {
@@ -138,4 +145,139 @@ export function dailySpendSeries(
     });
   }
   return points;
+}
+
+// ---------- Suggestions from history ----------
+
+const CATEGORY_EMOJI: Record<string, string> = {
+  Groceries: "🛒",
+  Dining: "🍽️",
+  "Food Delivery": "🛵",
+  Shopping: "🛍️",
+  Entertainment: "🎮",
+  Rideshare: "🚗",
+  Gas: "⛽",
+  Transit: "🚆",
+  Health: "💊",
+  Streaming: "📺",
+  Subscriptions: "🔁",
+  Education: "🎓",
+  Bills: "🧾",
+};
+
+export const DEFAULT_BUDGET_EMOJI = "💰";
+
+export function budgetEmoji(category: string): string {
+  return CATEGORY_EMOJI[category] ?? DEFAULT_BUDGET_EMOJI;
+}
+
+/** Round to an amount a person would actually type into a budget. */
+export function roundBudget(amount: number): number {
+  const step = amount < 100 ? 5 : amount < 500 ? 10 : amount < 2000 ? 25 : 50;
+  return Math.max(step, Math.round(amount / step) * step);
+}
+
+export interface BudgetSuggestion {
+  /** Average spend per budget period, from history. */
+  usual: number;
+  /** `usual`, rounded. */
+  suggested: number;
+  /** About 10% under usual, rounded: a gentle stretch goal. */
+  trimmed: number;
+  /** Complete months of history behind the average. */
+  months: number;
+}
+
+type SuggestPeriod = "monthly" | "weekly" | "yearly";
+
+/**
+ * What a budget for `category` would be if it matched recent habits: the
+ * average over the last 3 complete months (12 for yearly budgets), counting
+ * only months since the user's transaction history begins so a new account
+ * isn't averaged down by empty months.
+ */
+export function budgetSuggestion(
+  transactions: Transaction[],
+  category: string,
+  period: SuggestPeriod,
+  now = new Date()
+): BudgetSuggestion | null {
+  if (transactions.length === 0) return null;
+  const earliest = transactions.reduce(
+    (d, t) => (t.date < d ? t.date : d),
+    transactions[0].date
+  );
+  const lookback = period === "yearly" ? 12 : 3;
+  const windowStart = startOfMonth(subMonths(now, lookback));
+  const historyStart = startOfMonth(parseISO(earliest));
+  const from = historyStart > windowStart ? historyStart : windowStart;
+  const months = differenceInCalendarMonths(startOfMonth(now), from);
+  if (months <= 0) return null;
+
+  const start = toISODate(from);
+  const end = toISODate(endOfMonth(subMonths(now, 1)));
+  const total = transactions
+    .filter(
+      (t) =>
+        t.type === "expense" &&
+        t.category === category &&
+        t.date >= start &&
+        t.date <= end
+    )
+    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+
+  const perMonth = total / months;
+  const usual =
+    period === "weekly"
+      ? (perMonth * 12) / 52
+      : period === "yearly"
+        ? perMonth * 12
+        : perMonth;
+  if (usual < 1) return null;
+
+  const suggested = roundBudget(usual);
+  let trimmed = roundBudget(usual * 0.9);
+  if (trimmed >= suggested) trimmed = roundBudget(suggested * 0.85);
+  return { usual, suggested, trimmed, months };
+}
+
+export interface CategoryBudgetSuggestion extends BudgetSuggestion {
+  category: Category;
+}
+
+/** Below this usual monthly spend a budget isn't worth the attention. */
+const MIN_SUGGEST_MONTHLY = 50;
+
+/**
+ * Categories worth budgeting that don't have one yet: day-to-day spending
+ * (not fixed bills or uncategorized), biggest usual spend first.
+ */
+export function suggestBudgets(
+  transactions: Transaction[],
+  categories: Category[],
+  budgets: Budget[],
+  limit = 4,
+  now = new Date()
+): CategoryBudgetSuggestion[] {
+  const budgeted = new Set(budgets.map((b) => b.category));
+  return categories
+    .filter(
+      (c) =>
+        c.type !== "income" &&
+        !NOT_SPENDING.has(c.name) &&
+        // Sorting "Other" into real categories beats budgeting it.
+        c.name !== UNCATEGORIZED &&
+        !budgeted.has(c.name) &&
+        categoryKind(c.name, categories) !== "fixed"
+    )
+    .map((c) => {
+      const s = budgetSuggestion(transactions, c.name, "monthly", now);
+      return s ? { ...s, category: c } : null;
+    })
+    .filter(
+      (s): s is CategoryBudgetSuggestion =>
+        s !== null && s.usual >= MIN_SUGGEST_MONTHLY
+    )
+    .sort((a, b) => b.usual - a.usual)
+    .slice(0, limit);
 }

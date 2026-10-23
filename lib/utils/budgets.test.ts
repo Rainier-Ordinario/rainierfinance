@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { budgetPeriodRange, budgetProgress } from "@/lib/utils/budgets";
+import {
+  budgetPeriodRange,
+  budgetProgress,
+  budgetSuggestion,
+  roundBudget,
+  suggestBudgets,
+} from "@/lib/utils/budgets";
 import { toISODate } from "@/lib/utils/dates";
-import type { Budget, Transaction } from "@/types";
+import type { Budget, Category, Transaction } from "@/types";
 
 function budget(partial: Partial<Budget>): Budget {
   return {
@@ -96,5 +102,65 @@ describe("budgetPeriodRange", () => {
     );
     expect(toISODate(start)).toBe("2026-07-05");
     expect(toISODate(end)).toBe("2026-08-04");
+  });
+});
+
+describe("budget suggestions", () => {
+  const now = new Date(2026, 9, 22); // Oct 22, 2026
+  const history = [
+    tx({ date: "2026-07-03", amount: -280 }),
+    tx({ date: "2026-08-03", amount: -310 }),
+    tx({ date: "2026-09-03", amount: -340 }),
+    tx({ date: "2026-10-03", amount: -999 }), // current month: ignored
+    tx({ date: "2026-09-04", category: "Bills", amount: -1500 }),
+    tx({ date: "2026-09-05", category: "Streaming", amount: -20 }),
+    tx({ date: "2026-09-06", category: "Other", amount: -400 }),
+  ];
+
+  it("rounds to amounts people type", () => {
+    expect(roundBudget(43)).toBe(45);
+    expect(roundBudget(312)).toBe(310);
+    expect(roundBudget(1312)).toBe(1300);
+    expect(roundBudget(2)).toBe(5);
+  });
+
+  it("averages the last 3 complete months and offers a 10% trim", () => {
+    expect(budgetSuggestion(history, "Dining", "monthly", now)).toEqual({
+      usual: 310,
+      suggested: 310,
+      trimmed: 280,
+      months: 3,
+    });
+  });
+
+  it("converts to weekly and yearly budgets", () => {
+    expect(budgetSuggestion(history, "Dining", "weekly", now)?.usual).toBeCloseTo(
+      (310 * 12) / 52
+    );
+    // Yearly looks back 12 months but history only starts in July.
+    expect(budgetSuggestion(history, "Dining", "yearly", now)).toMatchObject({
+      usual: 310 * 12,
+      months: 3,
+    });
+  });
+
+  it("doesn't average over months before history begins", () => {
+    const s = budgetSuggestion([tx({ date: "2026-09-03", amount: -200 })], "Dining", "monthly", now);
+    expect(s).toMatchObject({ usual: 200, months: 1 });
+    expect(budgetSuggestion([tx({ date: "2026-10-03" })], "Dining", "monthly", now)).toBeNull();
+  });
+
+  it("suggests unbudgeted everyday categories, skipping fixed bills, Other, and small ones", () => {
+    const cat = (name: string): Category => ({
+      id: name, user_id: "u1", name, icon: "x", color: "#000",
+      type: "expense", is_default: true, created_at: "",
+    });
+    const categories = ["Dining", "Bills", "Streaming", "Groceries", "Other"].map(cat);
+    expect(
+      suggestBudgets(history, categories, [], 4, now).map((s) => s.category.name)
+    ).toEqual(["Dining"]);
+    expect(
+      suggestBudgets(history, categories, [budget({ category: "Dining" })], 4, now)
+    ).toEqual([]);
   });
 });

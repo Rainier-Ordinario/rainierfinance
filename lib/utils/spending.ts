@@ -11,6 +11,9 @@ import { merchantKey } from "@/lib/utils/categorize";
 import { toISODate } from "@/lib/utils/dates";
 import type { Category, CategoryKind, Transaction } from "@/types";
 
+/** Money-movement categories that aren't really spending. */
+export const NOT_SPENDING = new Set(["Income", "Transfer", "Investments", "Crypto"]);
+
 /** The catch-all category the auto-categorizer falls back to. */
 export const UNCATEGORIZED = "Other";
 

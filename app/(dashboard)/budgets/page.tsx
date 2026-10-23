@@ -23,8 +23,10 @@ import { BudgetCard } from "@/components/budgets/BudgetCard";
 import { BudgetModal } from "@/components/budgets/BudgetModal";
 import { BudgetDetail } from "@/components/budgets/BudgetDetail";
 import { BudgetsReview } from "@/components/budgets/BudgetsReview";
+import { BudgetSuggestions } from "@/components/budgets/BudgetSuggestions";
 import { useBudgets, useDeleteBudget } from "@/lib/hooks/useBudgets";
 import { useTransactions } from "@/lib/hooks/useTransactions";
+import { useCategories } from "@/lib/hooks/useCategories";
 import { budgetProgress } from "@/lib/utils/budgets";
 import { formatCAD } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
@@ -38,6 +40,7 @@ export default function BudgetsPage() {
 
   const budgets = useBudgets();
   const transactions = useTransactions();
+  const categories = useCategories();
   const deleteBudget = useDeleteBudget();
 
   const all = useMemo(() => budgets.data ?? [], [budgets.data]);
@@ -54,7 +57,15 @@ export default function BudgetsPage() {
     return { budgeted, spent, remaining: budgeted - spent };
   }, [all, withProgress]);
 
-  const isLoading = budgets.isLoading || transactions.isLoading;
+  const isLoading =
+    budgets.isLoading || transactions.isLoading || categories.isLoading;
+  const suggestions = (
+    <BudgetSuggestions
+      transactions={txs}
+      categories={categories.data ?? []}
+      budgets={all}
+    />
+  );
 
   return (
     <div>
@@ -87,16 +98,19 @@ export default function BudgetsPage() {
           </div>
         </>
       ) : all.length === 0 ? (
-        <EmptyState
-          icon={PiggyBank}
-          title="No budgets"
-          description="Set a limit for a spending category and track your pace against it."
-          actionLabel="Add budget"
-          onAction={() => {
-            setEditing(null);
-            setModalOpen(true);
-          }}
-        />
+        <>
+          <EmptyState
+            icon={PiggyBank}
+            title="No budgets"
+            description="Set a limit for a spending category and track your pace against it."
+            actionLabel="Add budget"
+            onAction={() => {
+              setEditing(null);
+              setModalOpen(true);
+            }}
+          />
+          <div className="mt-4">{suggestions}</div>
+        </>
       ) : (
         <>
           <div className="mb-4 grid gap-4 sm:grid-cols-3">
@@ -147,7 +161,8 @@ export default function BudgetsPage() {
             ))}
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 space-y-4">
+            {suggestions}
             <BudgetsReview budgets={all} transactions={txs} />
           </div>
         </>

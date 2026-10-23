@@ -20,11 +20,9 @@ import {
   categoryKind,
   KIND_DESCRIPTIONS,
   KIND_LABELS,
+  NOT_SPENDING,
 } from "@/lib/utils/spending";
 import type { Category, CategoryKind } from "@/types";
-
-/** Money-movement categories that aren't really spending. */
-const NOT_SPENDING = new Set(["Income", "Transfer", "Investments", "Crypto"]);
 
 const KINDS: CategoryKind[] = ["fixed", "essential", "discretionary"];
 
