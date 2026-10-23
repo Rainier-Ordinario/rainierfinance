@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   categoryBreakdown,
   categoryKind,
+  categoryTrends,
   spendingMix,
+  topMerchants,
   uncategorizedSummary,
 } from "@/lib/utils/spending";
 import type { Category, Transaction } from "@/types";
@@ -121,5 +123,52 @@ describe("categoryBreakdown", () => {
     const b = categoryBreakdown(txs, "this_month", now);
     expect(b).toMatchObject({ start: "2026-10-01", end: "2026-10-22" });
     expect(b.rows[0]).toMatchObject({ amount: 20, baseline: 350 / 3 });
+  });
+});
+
+describe("categoryTrends", () => {
+  it("buckets by month and compares the last 3 complete months to the 3 before", () => {
+    const txs = [
+      ...["04", "05", "06"].map((m) => tx({ date: `2026-${m}-10`, amount: -100 })),
+      ...["07", "08", "09"].map((m) => tx({ date: `2026-${m}-10`, amount: -150 })),
+      tx({ date: "2026-10-02", amount: -999 }), // current month: not in averages
+      tx({ date: "2026-10-02", category: "Income", type: "income", amount: 5000 }),
+    ];
+    const [dining] = categoryTrends(txs, 12, now);
+    expect(dining.category).toBe("Dining");
+    expect(dining.months).toHaveLength(12);
+    expect(dining.months.at(-1)).toMatchObject({ label: "Oct", amount: 999, partial: true });
+    expect(dining.total).toBe(750);
+    expect(dining.recentAvg).toBe(150);
+    expect(dining.priorAvg).toBe(100);
+    expect(dining.change).toBeCloseTo(0.5);
+  });
+
+  it("has no change without prior spend", () => {
+    const [t] = categoryTrends([tx({ date: "2026-09-10" })], 12, now);
+    expect(t.change).toBeNull();
+  });
+});
+
+describe("topMerchants", () => {
+  it("groups store numbers under one merchant", () => {
+    const merchants = topMerchants(
+      [
+        tx({ description: "STARBUCKS #1018", amount: -6 }),
+        tx({ description: "Starbucks 2201", amount: -8, date: "2026-10-09" }),
+        tx({ description: "SAVE-ON-FOODS #902", category: "Groceries", amount: -120 }),
+      ],
+      "2026-10-01",
+      "2026-10-31"
+    );
+    expect(merchants.map((m) => m.name)).toEqual(["Save On Foods", "Starbucks"]);
+    expect(merchants[1]).toMatchObject({
+      visits: 2,
+      total: 14,
+      average: 7,
+      lastDate: "2026-10-09",
+      category: "Dining",
+      searchTerm: "starbucks",
+    });
   });
 });

@@ -7,6 +7,7 @@ import {
   subMonths,
 } from "date-fns";
 import { categoryTotalsInRange, type CategoryTotal } from "@/lib/utils/aggregate";
+import { merchantKey } from "@/lib/utils/categorize";
 import { toISODate } from "@/lib/utils/dates";
 import type { Category, CategoryKind, Transaction } from "@/types";
 
@@ -194,40 +195,49 @@ export interface CategoryBreakdown {
 }
 
 /**
+ * Date window for a period. Multi-month periods cover whole completed months
+ * so averages aren't dragged down by a partial one.
+ */
+export function periodRange(period: SpendingPeriod, now = new Date()) {
+  switch (period) {
+    case "last_month": {
+      const from = startOfMonth(subMonths(now, 1));
+      return { from, to: endOfMonth(from), months: 1 };
+    }
+    case "3_months":
+      return {
+        from: startOfMonth(subMonths(now, 3)),
+        to: endOfMonth(subMonths(now, 1)),
+        months: 3,
+      };
+    case "12_months":
+      return {
+        from: startOfMonth(subMonths(now, 12)),
+        to: endOfMonth(subMonths(now, 1)),
+        months: 12,
+      };
+    default:
+      return { from: startOfMonth(now), to: now, months: 1 };
+  }
+}
+
+/** Human label for a period window, e.g. "September 2026". */
+export function periodLabel(from: Date, to: Date, months: number): string {
+  return months === 1
+    ? format(from, "MMMM yyyy")
+    : `${format(from, "MMM yyyy")} – ${format(to, "MMM yyyy")}`;
+}
+
+/**
  * Where the money went over a period, with each category's usual monthly
- * spend from the three months just before it. Multi-month periods cover
- * whole completed months so averages aren't dragged down by a partial one.
+ * spend from the three months just before it.
  */
 export function categoryBreakdown(
   transactions: Transaction[],
   period: SpendingPeriod,
   now = new Date()
 ): CategoryBreakdown {
-  let from: Date;
-  let to: Date;
-  let months: number;
-  switch (period) {
-    case "last_month":
-      from = startOfMonth(subMonths(now, 1));
-      to = endOfMonth(from);
-      months = 1;
-      break;
-    case "3_months":
-      from = startOfMonth(subMonths(now, 3));
-      to = endOfMonth(subMonths(now, 1));
-      months = 3;
-      break;
-    case "12_months":
-      from = startOfMonth(subMonths(now, 12));
-      to = endOfMonth(subMonths(now, 1));
-      months = 12;
-      break;
-    default:
-      from = startOfMonth(now);
-      to = now;
-      months = 1;
-  }
-
+  const { from, to, months } = periodRange(period, now);
   const start = toISODate(from);
   const end = toISODate(to);
   const baselineTotals = categoryTotalsInRange(
@@ -238,15 +248,10 @@ export function categoryBreakdown(
   const baselineOf = (category: string) =>
     (baselineTotals.find((b) => b.category === category)?.amount ?? 0) / 3;
 
-  const label =
-    months === 1
-      ? format(from, "MMMM yyyy")
-      : `${format(from, "MMM yyyy")} – ${format(to, "MMM yyyy")}`;
-
   return {
     start,
     end,
-    label,
+    label: periodLabel(from, to, months),
     months,
     rows: categoryTotalsInRange(transactions, start, end).map((row) => ({
       ...row,
@@ -254,4 +259,136 @@ export function categoryBreakdown(
       baseline: baselineOf(row.category),
     })),
   };
+}
+
+// ---------- Category trends ----------
+
+export interface TrendMonth {
+  /** Short month, e.g. "Sep". */
+  label: string;
+  start: string;
+  end: string;
+  amount: number;
+  /** The current, still-running month. */
+  partial: boolean;
+}
+
+export interface CategoryTrend {
+  category: string;
+  months: TrendMonth[];
+  /** Total across all complete months shown. */
+  total: number;
+  /** Average of the last 3 complete months. */
+  recentAvg: number;
+  /** Average of the 3 complete months before those. */
+  priorAvg: number;
+  /** recentAvg vs priorAvg as a fraction (0.25 = +25%); null without prior spend. */
+  change: number | null;
+}
+
+/**
+ * Each expense category's monthly spend over the last `months` months
+ * (current month last, flagged partial), with a recent-vs-prior 3-month
+ * trend so slow creep shows up even when no single month looks unusual.
+ */
+export function categoryTrends(
+  transactions: Transaction[],
+  months = 12,
+  now = new Date()
+): CategoryTrend[] {
+  const windows = Array.from({ length: months }, (_, i) => {
+    const d = subMonths(now, months - 1 - i);
+    return {
+      label: format(d, "MMM"),
+      start: toISODate(startOfMonth(d)),
+      end: toISODate(endOfMonth(d)),
+      partial: i === months - 1,
+    };
+  });
+
+  const byCategory = new Map<string, number[]>();
+  for (const t of transactions) {
+    if (t.type !== "expense") continue;
+    const idx = windows.findIndex((w) => t.date >= w.start && t.date <= w.end);
+    if (idx === -1) continue;
+    const amounts = byCategory.get(t.category) ?? new Array(months).fill(0);
+    amounts[idx] += magnitude(t);
+    byCategory.set(t.category, amounts);
+  }
+
+  const avg = (xs: number[]) =>
+    xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0;
+
+  return [...byCategory.entries()]
+    .map(([category, amounts]) => {
+      const complete = amounts.slice(0, -1);
+      const recentAvg = avg(complete.slice(-3));
+      const priorAvg = avg(complete.slice(-6, -3));
+      return {
+        category,
+        months: windows.map((w, i) => ({ ...w, amount: amounts[i] })),
+        total: complete.reduce((s, x) => s + x, 0),
+        recentAvg,
+        priorAvg,
+        change: priorAvg > 0 ? recentAvg / priorAvg - 1 : null,
+      };
+    })
+    .sort((a, b) => b.total - a.total);
+}
+
+// ---------- Top merchants ----------
+
+export interface MerchantSummary {
+  key: string;
+  /** Readable name derived from the normalized key. */
+  name: string;
+  /** The category most of this merchant's charges fall in. */
+  category: string;
+  visits: number;
+  total: number;
+  average: number;
+  lastDate: string;
+  /** A word to search transactions with to find this merchant. */
+  searchTerm: string;
+}
+
+function titleCase(s: string): string {
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Where spending concentrates by merchant in a date range, biggest first. */
+export function topMerchants(
+  transactions: Transaction[],
+  start: string,
+  end: string
+): MerchantSummary[] {
+  const groups = new Map<string, Transaction[]>();
+  for (const t of expensesIn(transactions, start, end)) {
+    const key = merchantKey(t.description);
+    if (!key) continue;
+    groups.set(key, [...(groups.get(key) ?? []), t]);
+  }
+
+  return [...groups.entries()]
+    .map(([key, txs]) => {
+      const total = txs.reduce((s, t) => s + magnitude(t), 0);
+      const categoryCounts = new Map<string, number>();
+      for (const t of txs) {
+        categoryCounts.set(t.category, (categoryCounts.get(t.category) ?? 0) + 1);
+      }
+      const category = [...categoryCounts.entries()].sort(
+        (a, b) => b[1] - a[1]
+      )[0][0];
+      return {
+        key,
+        name: titleCase(key),
+        category,
+        visits: txs.length,
+        total,
+        average: total / txs.length,
+        lastDate: txs.reduce((d, t) => (t.date > d ? t.date : d), ""),
+        searchTerm: key.split(" ").sort((a, b) => b.length - a.length)[0],
+      };
+    })
+    .sort((a, b) => b.total - a.total);
 }

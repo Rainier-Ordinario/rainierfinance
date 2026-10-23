@@ -9,6 +9,10 @@ import { Button } from "@/components/ui/button";
 const PAGE_META: Record<string, { title: string; subtitle: string }> = {
   "/dashboard": { title: "Home", subtitle: "Your money at a glance" },
   "/transactions": { title: "Transactions", subtitle: "Every dollar, sorted" },
+  "/insights": {
+    title: "Insights",
+    subtitle: "Trends and where it goes",
+  },
   "/budgets": { title: "Budgets", subtitle: "This month's spending plan" },
   "/subscriptions": {
     title: "Subscriptions",

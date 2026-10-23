@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   ArrowLeftRight,
+  ChartColumnBig,
   CreditCard,
   Home,
   LineChart,
@@ -34,6 +35,7 @@ import {
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
+  { href: "/insights", label: "Insights", icon: ChartColumnBig },
   { href: "/budgets", label: "Budgets", icon: PiggyBank },
   { href: "/subscriptions", label: "Subscriptions", icon: Repeat },
   { href: "/investments", label: "Investments", icon: TrendingUp },

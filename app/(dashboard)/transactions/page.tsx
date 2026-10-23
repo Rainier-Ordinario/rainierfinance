@@ -67,7 +67,9 @@ function TransactionsContent() {
   const [filters, setFilters] = useState<TransactionFilters>(() => {
     const type = searchParams.get("type");
     const category = searchParams.get("category");
+    const search = searchParams.get("search");
     return {
+      ...(search ? { search } : {}),
       ...(type === "income" || type === "expense" || type === "transfer"
         ? { type }
         : {}),
@@ -96,7 +98,9 @@ function TransactionsContent() {
 
   // The search box updates the query filters (and so the server request)
   // only after a typing pause — one request per search, not per keystroke.
-  const [searchInput, setSearchInput] = useState("");
+  const [searchInput, setSearchInput] = useState(
+    () => searchParams.get("search") ?? ""
+  );
   useEffect(() => {
     const timer = setTimeout(() => {
       setFilters((f) =>
