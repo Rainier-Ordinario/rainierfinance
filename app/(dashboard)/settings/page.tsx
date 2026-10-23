@@ -6,7 +6,9 @@ import { CardSkeleton } from "@/components/shared/CardSkeleton";
 import { ProfileForm } from "@/components/settings/ProfileForm";
 import { PreferencesForm } from "@/components/settings/PreferencesForm";
 import { AccountsCard } from "@/components/settings/AccountsCard";
+import { CategoryGroupsCard } from "@/components/settings/CategoryGroupsCard";
 import { useAccounts } from "@/lib/hooks/useAccounts";
+import { useCategories } from "@/lib/hooks/useCategories";
 import {
   useAuthUser,
   useProfile,
@@ -18,6 +20,7 @@ export default function SettingsPage() {
   const profile = useProfile();
   const settings = useUserSettings();
   const accounts = useAccounts();
+  const categories = useCategories();
 
   const cashAccounts = useMemo(
     () =>
@@ -31,7 +34,8 @@ export default function SettingsPage() {
     authUser.isLoading ||
     profile.isLoading ||
     settings.isLoading ||
-    accounts.isLoading;
+    accounts.isLoading ||
+    categories.isLoading;
 
   return (
     <div>
@@ -56,6 +60,7 @@ export default function SettingsPage() {
             accounts={cashAccounts}
           />
           <AccountsCard accounts={accounts.data ?? []} />
+          <CategoryGroupsCard categories={categories.data ?? []} />
         </div>
       )}
     </div>

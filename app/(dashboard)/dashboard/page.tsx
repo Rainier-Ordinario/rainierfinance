@@ -20,13 +20,12 @@ import {
 } from "@/lib/hooks/useSettings";
 import {
   cashFlowByMonth,
-  categoryTotals,
   monthlyExpenses,
   monthlyIncome,
   netWorth,
   savingsRate,
-  topCategories,
 } from "@/lib/utils/aggregate";
+import { uncategorizedSummary } from "@/lib/utils/spending";
 import { currentMonthRange, toISODate } from "@/lib/utils/dates";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { StatCardSkeleton, CardSkeleton } from "@/components/shared/CardSkeleton";
@@ -36,7 +35,9 @@ import {
   MonthlySpendingCard,
   SavingsRateCard,
 } from "@/components/dashboard/MetricCards";
-import { SpendingDonut } from "@/components/dashboard/SpendingDonut";
+import { SpendingByCategory } from "@/components/dashboard/SpendingByCategory";
+import { SpendingMixCard } from "@/components/dashboard/SpendingMixCard";
+import { UncategorizedBanner } from "@/components/dashboard/UncategorizedBanner";
 import { CashFlowChart } from "@/components/dashboard/CashFlowChart";
 import { UtilizationWidget } from "@/components/dashboard/UtilizationWidget";
 import { UpcomingSubscriptions } from "@/components/dashboard/UpcomingSubscriptions";
@@ -94,7 +95,7 @@ export default function DashboardPage() {
       expenses,
       savingsRate: savingsRate(income, expenses),
       cashFlow: cashFlowByMonth(txs),
-      categories: topCategories(categoryTotals(txs)),
+      uncategorized: uncategorizedSummary(txs),
       creditCards: accts.filter((a) => a.type === "credit_card" && a.is_active),
     };
   }, [transactions.data, accounts.data, snapshots.data]);
@@ -127,16 +128,22 @@ export default function DashboardPage() {
         <SavingsRateCard rate={stats.savingsRate} />
       </div>
 
+      <UncategorizedBanner summary={stats.uncategorized} />
+
       {/* Middle: charts + right widgets */}
       <div className="mt-4 grid gap-4 lg:grid-cols-5">
         <div className="space-y-4 lg:col-span-3">
-          <SpendingDonut
-            data={stats.categories}
+          <SpendingByCategory
+            transactions={transactions.data ?? []}
             categories={categories.data ?? []}
           />
           <CashFlowChart data={stats.cashFlow} />
         </div>
         <div className="space-y-4 lg:col-span-2">
+          <SpendingMixCard
+            transactions={transactions.data ?? []}
+            categories={categories.data ?? []}
+          />
           <UtilizationWidget
             cards={stats.creditCards}
             reminders={reminders.data ?? []}

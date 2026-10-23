@@ -120,13 +120,13 @@ describe("category totals", () => {
     ]);
   });
 
-  it("topCategories folds the tail into Other", () => {
+  it("topCategories folds the tail into one bucket", () => {
     const totals = Array.from({ length: 8 }, (_, i) => ({
       category: `C${i}`,
       amount: 100 - i,
     }));
     const top = topCategories(totals, 6);
     expect(top).toHaveLength(7);
-    expect(top[6]).toEqual({ category: "Other", amount: 94 + 93 });
+    expect(top[6]).toEqual({ category: "Everything else", amount: 94 + 93 });
   });
 });

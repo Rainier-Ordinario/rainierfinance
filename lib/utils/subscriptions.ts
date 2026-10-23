@@ -6,6 +6,7 @@ import {
   parseISO,
   startOfDay,
 } from "date-fns";
+import { merchantKey } from "@/lib/utils/categorize";
 import { toISODate } from "@/lib/utils/dates";
 import type { Subscription, Transaction } from "@/types";
 
@@ -85,15 +86,6 @@ export interface DetectedSubscription {
   occurrences: number;
 }
 
-function normalize(description: string): string {
-  return description
-    .toLowerCase()
-    .replace(/[#*]?\d+/g, "")
-    .replace(/[^a-z ]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function titleCase(s: string): string {
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -114,13 +106,13 @@ export function detectRecurringCharges(
   transactions: Transaction[],
   subscriptions: Subscription[]
 ): DetectedSubscription[] {
-  const known = subscriptions.map((s) => normalize(s.name));
+  const known = subscriptions.map((s) => merchantKey(s.name));
   const groups = new Map<string, Transaction[]>();
 
   for (const t of transactions) {
     if (t.type !== "expense") continue;
     if (t.category && NON_SUBSCRIPTION_CATEGORIES.has(t.category)) continue;
-    const key = normalize(t.description);
+    const key = merchantKey(t.description);
     if (!key) continue;
     groups.set(key, [...(groups.get(key) ?? []), t]);
   }

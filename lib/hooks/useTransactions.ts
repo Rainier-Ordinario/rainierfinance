@@ -16,6 +16,8 @@ export interface TransactionFilters {
   amountMax?: number;
 }
 
+const PAGE_SIZE = 1000;
+
 export function useTransactions(filters: TransactionFilters = {}) {
   return useQuery({
     queryKey: ["transactions", filters],
@@ -25,7 +27,9 @@ export function useTransactions(filters: TransactionFilters = {}) {
         .from("transactions")
         .select("*")
         .order("date", { ascending: false })
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        // Unique tie-breaker so pages never overlap or skip rows.
+        .order("id");
 
       if (filters.search)
         query = query.ilike("description", `%${filters.search}%`);
@@ -53,9 +57,16 @@ export function useTransactions(filters: TransactionFilters = {}) {
         );
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      return (data ?? []) as Transaction[];
+      // PostgREST returns at most 1000 rows per request, so page until a
+      // short page; otherwise older history silently drops off the charts.
+      const rows: Transaction[] = [];
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
+        if (error) throw error;
+        rows.push(...((data ?? []) as Transaction[]));
+        if ((data ?? []).length < PAGE_SIZE) break;
+      }
+      return rows;
     },
   });
 }

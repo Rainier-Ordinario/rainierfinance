@@ -300,6 +300,7 @@ export function RecapView({ period }: { period: Period }) {
               data={data.categories}
               categories={categories.data ?? []}
               emptyLabel={`No expenses recorded this ${config.noun}.`}
+              range={{ start: data.start, end: data.end }}
             />
 
             <div className="space-y-4">

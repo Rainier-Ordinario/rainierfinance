@@ -127,7 +127,13 @@ export function categoryTotals(
   return categoryTotalsInRange(transactions, start, end);
 }
 
-/** Top N categories with the remainder folded into "Other". */
+/**
+ * Label for the folded tail. Distinct from the real "Other" category so the
+ * two never collide in a chart legend.
+ */
+export const FOLDED_CATEGORIES = "Everything else";
+
+/** Top N categories with the remainder folded into one bucket. */
 export function topCategories(
   totals: CategoryTotal[],
   n = 6
@@ -135,5 +141,5 @@ export function topCategories(
   if (totals.length <= n) return totals;
   const top = totals.slice(0, n);
   const rest = totals.slice(n).reduce((sum, c) => sum + c.amount, 0);
-  return [...top, { category: "Other", amount: rest }];
+  return [...top, { category: FOLDED_CATEGORIES, amount: rest }];
 }

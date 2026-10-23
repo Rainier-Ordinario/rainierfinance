@@ -38,7 +38,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { useUpsertAccount } from "@/lib/hooks/useAccounts";
-import { categorizeMerchant } from "@/lib/utils/categorize";
+import {
+  applyMerchantRules,
+  categorizeMerchant,
+} from "@/lib/utils/categorize";
+import { useMerchantRules } from "@/lib/hooks/useMerchantRules";
 import {
   detectSubscriptionCandidates,
   type SubscriptionCandidate,
@@ -62,6 +66,7 @@ export function CSVImporter({
   accounts: Account[];
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
+  const merchantRules = useMerchantRules();
   const [rows, setRows] = useState<ParsedCsvTransaction[]>([]);
   const [rawGrid, setRawGrid] = useState<string[][]>([]);
   const [mapping, setMapping] = useState<Record<number, ColumnKey>>({});
@@ -144,7 +149,7 @@ export function CSVImporter({
       if (looksLikeRbcCsv(header)) {
         const { transactions, errors, detectedAccounts: detected } =
           parseRbcCsv(text);
-        setRows(transactions);
+        setRows(applyMerchantRules(transactions, merchantRules));
         setParseErrors(errors);
         setDetectedAccounts(detected);
         setNeedsMapping(false);
@@ -214,7 +219,7 @@ export function CSVImporter({
         date,
         description,
         amount,
-        category: amount > 0 ? "Income" : categorizeMerchant(description),
+        category: amount > 0 ? "Income" : categorizeMerchant(description, merchantRules),
         type: amount > 0 ? "income" : "expense",
       });
     });

@@ -140,10 +140,43 @@ const ORDERED_MERCHANTS = Object.keys(MERCHANT_CATEGORIES).sort(
   (a, b) => b.length - a.length
 );
 
-export function categorizeMerchant(description: string): string {
+/** Learned merchant → category overrides, keyed by merchantKey(). */
+export type MerchantRules = Record<string, string>;
+
+/**
+ * Stable merchant identity for a bank description: lowercase, store numbers
+ * and punctuation stripped, so "STARBUCKS #1234" and "Starbucks 0567" match.
+ */
+export function merchantKey(description: string): string {
+  return description
+    .toLowerCase()
+    .replace(/[#*]?\d+/g, "")
+    .replace(/[^a-z ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** A rule the user taught by recategorizing beats the built-in keywords. */
+export function categorizeMerchant(
+  description: string,
+  rules: MerchantRules = {}
+): string {
+  const key = merchantKey(description);
+  if (key && rules[key]) return rules[key];
   const upper = description.toUpperCase();
   for (const merchant of ORDERED_MERCHANTS) {
     if (upper.includes(merchant)) return MERCHANT_CATEGORIES[merchant];
   }
   return "Other";
+}
+
+/** Re-categorize parsed expense rows with the user's learned rules. */
+export function applyMerchantRules<
+  T extends { description: string; category: string; type: string },
+>(rows: T[], rules: MerchantRules): T[] {
+  return rows.map((r) => {
+    if (r.type !== "expense") return r;
+    const learned = rules[merchantKey(r.description)];
+    return learned ? { ...r, category: learned } : r;
+  });
 }

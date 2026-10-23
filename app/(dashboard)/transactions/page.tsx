@@ -49,6 +49,7 @@ import {
 } from "@/lib/hooks/useTransactions";
 import { useAccounts } from "@/lib/hooks/useAccounts";
 import { useCategories } from "@/lib/hooks/useCategories";
+import { useLearnMerchantCategory } from "@/lib/hooks/useMerchantRules";
 import { downloadCsv } from "@/lib/utils/exportCsv";
 import type { Transaction, TransactionType } from "@/types";
 
@@ -61,15 +62,25 @@ const TYPE_TABS = [
 
 function TransactionsContent() {
   const searchParams = useSearchParams();
-  const initialType = searchParams.get("type");
-  const [filters, setFilters] = useState<TransactionFilters>(() =>
-    initialType === "income" ||
-    initialType === "expense" ||
-    initialType === "transfer"
-      ? { type: initialType }
-      : {}
+  // Deep links (e.g. a dashboard chart slice) arrive as
+  // ?type=expense&category=Dining&from=2026-09-01&to=2026-09-30
+  const [filters, setFilters] = useState<TransactionFilters>(() => {
+    const type = searchParams.get("type");
+    const category = searchParams.get("category");
+    return {
+      ...(type === "income" || type === "expense" || type === "transfer"
+        ? { type }
+        : {}),
+      ...(category ? { categories: [category] } : {}),
+      ...(searchParams.get("from")
+        ? { dateFrom: searchParams.get("from")! }
+        : {}),
+      ...(searchParams.get("to") ? { dateTo: searchParams.get("to")! } : {}),
+    };
+  });
+  const [showFilters, setShowFilters] = useState(
+    () => searchParams.has("category") || searchParams.has("from")
   );
-  const [showFilters, setShowFilters] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
@@ -103,6 +114,7 @@ function TransactionsContent() {
   const categories = useCategories();
   const deleteTxs = useDeleteTransactions();
   const bulkCategorize = useBulkCategorize();
+  const learn = useLearnMerchantCategory();
 
   const rows = transactions.data ?? [];
   const hasActiveFilters = Object.values(filters).some(
@@ -203,9 +215,18 @@ function TransactionsContent() {
             </span>
             <Select
               onValueChange={(category) => {
+                // Expenses teach their merchants the new category too.
+                const descriptions = rows
+                  .filter((t) => selected.has(t.id) && t.type === "expense")
+                  .map((t) => t.description);
                 bulkCategorize.mutate(
                   { ids: [...selected], category },
-                  { onSuccess: () => setSelected(new Set()) }
+                  {
+                    onSuccess: () => {
+                      setSelected(new Set());
+                      learn.mutate({ descriptions, category });
+                    },
+                  }
                 );
               }}
             >

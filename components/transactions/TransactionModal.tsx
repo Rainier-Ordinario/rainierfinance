@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useUpsertTransaction } from "@/lib/hooks/useTransactions";
+import { useLearnMerchantCategory } from "@/lib/hooks/useMerchantRules";
 import { AccountModal } from "@/components/accounts/AccountModal";
 import { toISODate } from "@/lib/utils/dates";
 import type { Account, Category, Transaction } from "@/types";
@@ -57,6 +58,7 @@ export function TransactionModal({
   editing?: Transaction | null;
 }) {
   const upsert = useUpsertTransaction();
+  const learn = useLearnMerchantCategory();
   const [accountModalOpen, setAccountModalOpen] = useState(false);
 
   const form = useForm<FormValues>({
@@ -123,6 +125,11 @@ export function TransactionModal({
   }
 
   function onSubmit(values: FormValues) {
+    // Recategorizing an expense teaches the app this merchant's category.
+    const recategorized =
+      !!editing &&
+      values.isExpense &&
+      editing.category !== values.category;
     upsert.mutate(
       {
         ...(editing ? { id: editing.id } : {}),
@@ -135,7 +142,17 @@ export function TransactionModal({
         is_recurring: values.is_recurring,
         notes: values.notes || null,
       },
-      { onSuccess: () => onOpenChange(false) }
+      {
+        onSuccess: () => {
+          onOpenChange(false);
+          if (recategorized) {
+            learn.mutate({
+              descriptions: [values.description],
+              category: values.category,
+            });
+          }
+        },
+      }
     );
   }
 

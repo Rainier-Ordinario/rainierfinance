@@ -12,6 +12,7 @@ export type AccountType =
 
 export type TransactionType = "expense" | "income" | "transfer";
 export type CategoryType = "expense" | "income" | "both";
+export type CategoryKind = "fixed" | "essential" | "discretionary";
 export type BillingCycle = "monthly" | "yearly" | "weekly";
 export type SubscriptionStatus = "active" | "cancelled" | "paused";
 export type BudgetPeriod = "monthly" | "weekly" | "yearly" | "custom";
@@ -67,6 +68,8 @@ export interface Category {
   icon: string;
   color: string;
   type: CategoryType | null;
+  /** Null (or absent before migration 005) → name-based default. */
+  kind?: CategoryKind | null;
   is_default: boolean;
   created_at: string;
 }
@@ -173,6 +176,8 @@ export interface UserSettings {
   dry_powder_account_id: string | null;
   /** Normalized merchant keys the user dismissed from detection. */
   dismissed_recurring: string[] | null;
+  /** Learned merchantKey → category overrides (migration 005). */
+  merchant_rules?: Record<string, string> | null;
   updated_at: string;
 }
 
