@@ -3,6 +3,7 @@ import {
   detectRecurringCharges,
   monthlyAmount,
   rolledBillingDate,
+  subscriptionHealth,
 } from "@/lib/utils/subscriptions";
 import type { Subscription, Transaction } from "@/types";
 
@@ -154,5 +155,40 @@ describe("rolledBillingDate", () => {
     expect(
       rolledBillingDate(sub({ status: "paused", next_billing_date: "2026-09-01" }), now)
     ).toBe("2026-09-01");
+  });
+});
+
+describe("subscriptionHealth", () => {
+  const now = new Date(2026, 9, 22);
+  const charge = (date: string, amount: number) =>
+    tx({ date, amount, description: `NETFLIX.COM ${date}` });
+
+  it("spots a price increase and a stale amount on file", () => {
+    const h = subscriptionHealth(
+      sub({ amount: 18.99 }),
+      [charge("2026-08-05", -18.99), charge("2026-09-05", -20.99), charge("2026-10-05", -20.99), charge("2026-07-05", -18.99)],
+      now
+    );
+    expect(h.priceChange).toEqual({ from: 18.99, to: 20.99, date: "2026-09-05" });
+    expect(h.amountMismatch).toEqual({ charged: 20.99, onFile: 18.99 });
+    expect(h.staleSince).toBeNull();
+  });
+
+  it("forgets changes older than about 4 months", () => {
+    const h = subscriptionHealth(sub({ amount: 20.99 }), [charge("2026-04-05", -18.99), charge("2026-05-05", -20.99), charge("2026-10-05", -20.99)], now);
+    expect(h.priceChange).toBeNull();
+  });
+
+  it("reports the change when it is the latest charge", () => {
+    const h = subscriptionHealth(sub({ amount: 18.99 }), [charge("2026-09-05", -18.99), charge("2026-10-05", -20.99)], now);
+    expect(h.priceChange).toEqual({ from: 18.99, to: 20.99, date: "2026-10-05" });
+  });
+
+  it("ignores pennies and flags charges that stopped", () => {
+    const h = subscriptionHealth(sub({ amount: 15.49 }), [charge("2026-06-05", -15.49), charge("2026-07-05", -15.52)], now);
+    expect(h.priceChange).toBeNull();
+    expect(h.amountMismatch).toBeNull();
+    expect(h.staleSince).toBe("2026-07-05");
+    expect(subscriptionHealth(sub({ status: "cancelled" }), [charge("2026-07-05", -15.49)], now).staleSince).toBeNull();
   });
 });

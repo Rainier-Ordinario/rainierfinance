@@ -29,6 +29,7 @@ import {
 } from "@/lib/utils/currency";
 import { formatDate } from "@/lib/utils/dates";
 import { isRefund, spendOf } from "@/lib/utils/aggregate";
+import { merchantKey } from "@/lib/utils/categorize";
 import { cn } from "@/lib/utils";
 import { CategoryDot } from "@/components/dashboard/RecentTransactions";
 import type { Account, Category, Transaction } from "@/types";
@@ -47,6 +48,7 @@ export function TransactionTable({
   onDelete,
   onSplit,
   onUnsplit,
+  onMerchant,
 }: {
   transactions: Transaction[];
   accounts: Account[];
@@ -57,6 +59,8 @@ export function TransactionTable({
   onDelete: (transaction: Transaction) => void;
   onSplit?: (transaction: Transaction) => void;
   onUnsplit?: (transaction: Transaction) => void;
+  /** Open a merchant's history, by merchantKey. */
+  onMerchant?: (key: string) => void;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortAsc, setSortAsc] = useState(false);
@@ -210,7 +214,18 @@ export function TransactionTable({
         <Badge variant="outline">{accountName(t.account_id)}</Badge>
       </TableCell>
       <TableCell className="max-w-56 truncate font-medium">
-        {t.description}
+        {onMerchant && t.type === "expense" ? (
+          <button
+            type="button"
+            onClick={() => onMerchant(merchantKey(t.description))}
+            className="max-w-full truncate text-left underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none"
+            title="See this merchant's history"
+          >
+            {t.description}
+          </button>
+        ) : (
+          t.description
+        )}
       </TableCell>
       <TableCell>
         <span className="flex items-center gap-2 text-sm">

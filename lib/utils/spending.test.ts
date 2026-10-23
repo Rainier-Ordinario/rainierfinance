@@ -4,6 +4,7 @@ import {
   categoryKind,
   categoryTrends,
   foodSplit,
+  merchantHistory,
   moneyFlow,
   safeToSpend,
   savingsRateTrend,
@@ -394,5 +395,25 @@ describe("split purchases", () => {
     const [costco] = topMerchants(parts, "2026-10-01", "2026-10-31");
     expect(costco).toMatchObject({ visits: 1, total: 190, average: 190 });
     expect(smallPurchases(parts, [], 1, 15, now)[0].count).toBe(0);
+  });
+});
+
+describe("merchantHistory", () => {
+  it("summarizes one merchant across months", () => {
+    const h = merchantHistory(
+      [
+        tx({ description: "STARBUCKS #1", date: "2026-08-03", amount: -6 }),
+        tx({ description: "STARBUCKS #2", date: "2026-10-03", amount: -8 }),
+        tx({ description: "STARBUCKS #2", date: "2026-10-04", amount: 2 }), // refund
+        tx({ description: "STARBUCKS #3", date: "2024-01-03", amount: -5 }), // outside 12 months
+        tx({ description: "TIM HORTONS", date: "2026-10-03", amount: -4 }),
+      ],
+      "starbucks",
+      12,
+      now
+    );
+    expect(h).toMatchObject({ name: "Starbucks", total: 12, visits: 2, average: 6, firstSeen: "2024-01-03", lastSeen: "2026-10-04" });
+    expect(h.months.at(-1)).toMatchObject({ label: "Oct", amount: 6 });
+    expect(h.transactions).toHaveLength(4);
   });
 });

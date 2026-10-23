@@ -42,6 +42,7 @@ import { CSVImporter } from "@/components/transactions/CSVImporter";
 import { TrendPanel } from "@/components/transactions/TrendPanel";
 import { PossibleRefunds } from "@/components/transactions/PossibleRefunds";
 import { SplitDialog } from "@/components/transactions/SplitDialog";
+import { MerchantSheet } from "@/components/merchants/MerchantSheet";
 import {
   useBulkCategorize,
   useDeleteTransactions,
@@ -91,6 +92,7 @@ function TransactionsContent() {
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [deleting, setDeleting] = useState<Transaction | null>(null);
   const [splitting, setSplitting] = useState<Transaction | null>(null);
+  const [merchant, setMerchant] = useState<string | null>(null);
   const unsplit = useUnsplitTransaction();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -310,6 +312,7 @@ function TransactionsContent() {
               onDelete={setDeleting}
               onSplit={setSplitting}
               onUnsplit={(t) => unsplit.mutate(t)}
+              onMerchant={setMerchant}
             />
           )}
         </div>
@@ -321,6 +324,11 @@ function TransactionsContent() {
         accounts={accounts.data ?? []}
         categories={categories.data ?? []}
         editing={editing}
+      />
+
+      <MerchantSheet
+        merchantKey={merchant}
+        onOpenChange={(o) => !o && setMerchant(null)}
       />
 
       <SplitDialog

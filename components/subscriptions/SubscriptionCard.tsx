@@ -1,13 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCAD } from "@/lib/utils/currency";
 import { daysUntil, formatDateShort } from "@/lib/utils/dates";
-import { subscriptionLogoUrl } from "@/lib/utils/subscriptions";
+import {
+  subscriptionLogoUrl,
+  type SubscriptionHealth,
+} from "@/lib/utils/subscriptions";
 import { cn } from "@/lib/utils";
 import type { Account, Subscription } from "@/types";
 
@@ -28,11 +31,18 @@ export function SubscriptionCard({
   accounts,
   onEdit,
   onDelete,
+  health,
+  onUpdateAmount,
+  onMarkCancelled,
 }: {
   subscription: Subscription;
   accounts: Account[];
   onEdit: () => void;
   onDelete: () => void;
+  /** What recent charges say about this subscription. */
+  health?: SubscriptionHealth;
+  onUpdateAmount?: (amount: number) => void;
+  onMarkCancelled?: () => void;
 }) {
   const [logoFailed, setLogoFailed] = useState(false);
   const days = daysUntil(subscription.next_billing_date);
@@ -95,6 +105,52 @@ export function SubscriptionCard({
             )}
             {account && <> · {account.name}</>}
           </p>
+
+          {health?.priceChange && (
+            <p
+              className={cn(
+                "mt-2 flex items-center gap-1 text-xs",
+                health.priceChange.to > health.priceChange.from
+                  ? "text-warning"
+                  : "text-success"
+              )}
+            >
+              {health.priceChange.to > health.priceChange.from ? (
+                <TrendingUp className="size-3.5" aria-hidden />
+              ) : (
+                <TrendingDown className="size-3.5" aria-hidden />
+              )}
+              Price {health.priceChange.to > health.priceChange.from ? "went up" : "dropped"}:{" "}
+              {formatCAD(health.priceChange.from)} → {formatCAD(health.priceChange.to)} on{" "}
+              {formatDateShort(health.priceChange.date)}
+            </p>
+          )}
+          {health?.amountMismatch && onUpdateAmount && (
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+              Last charged {formatCAD(health.amountMismatch.charged)}
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs"
+                onClick={() => onUpdateAmount(health.amountMismatch!.charged)}
+              >
+                Update amount
+              </Button>
+            </p>
+          )}
+          {health?.staleSince && onMarkCancelled && (
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-warning">
+              No charge since {formatDateShort(health.staleSince)}. Cancelled?
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs"
+                onClick={onMarkCancelled}
+              >
+                Mark cancelled
+              </Button>
+            </p>
+          )}
         </div>
 
         <div className="-mr-2 flex shrink-0 flex-col gap-1">

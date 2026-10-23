@@ -24,6 +24,7 @@ import { SubscriptionModal } from "@/components/subscriptions/SubscriptionModal"
 import { DetectedSubscriptions } from "@/components/subscriptions/DetectedSubscriptions";
 import {
   useDeleteSubscription,
+  useUpsertSubscription,
   useSubscriptions,
 } from "@/lib/hooks/useSubscriptions";
 import { useAccounts } from "@/lib/hooks/useAccounts";
@@ -33,6 +34,7 @@ import { formatCAD } from "@/lib/utils/currency";
 import {
   detectRecurringCharges,
   monthlyAmount,
+  subscriptionHealth,
 } from "@/lib/utils/subscriptions";
 import type { Subscription } from "@/types";
 
@@ -46,6 +48,7 @@ export default function SubscriptionsPage() {
   const transactions = useTransactions();
   const settings = useUserSettings();
   const deleteSubscription = useDeleteSubscription();
+  const upsertSubscription = useUpsertSubscription();
 
   const subs = useMemo(() => subscriptions.data ?? [], [subscriptions.data]);
   const active = useMemo(
@@ -153,6 +156,13 @@ export default function SubscriptionsPage() {
                   setModalOpen(true);
                 }}
                 onDelete={() => setDeleting(sub)}
+                health={subscriptionHealth(sub, transactions.data ?? [])}
+                onUpdateAmount={(amount) =>
+                  upsertSubscription.mutate({ ...sub, amount })
+                }
+                onMarkCancelled={() =>
+                  upsertSubscription.mutate({ ...sub, status: "cancelled" })
+                }
               />
             ))}
           </div>

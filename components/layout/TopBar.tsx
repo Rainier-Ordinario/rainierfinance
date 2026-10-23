@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Menu, Search } from "lucide-react";
 import { useFinanceStore } from "@/store/useFinanceStore";
 import { Button } from "@/components/ui/button";
+import { AlertsBell } from "@/components/layout/AlertsBell";
 
 const PAGE_META: Record<string, { title: string; subtitle: string }> = {
   "/dashboard": { title: "Home", subtitle: "Your money at a glance" },
@@ -74,6 +75,7 @@ export function TopBar() {
         <Search className="size-[13px]" aria-hidden />
         Search
       </Link>
+      <AlertsBell />
     </header>
   );
 }

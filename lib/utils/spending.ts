@@ -834,3 +834,63 @@ export function moneyFlow(
   const spent = groups.reduce((s, g) => s + g.total, 0);
   return { income, spent, saved: income - spent, groups };
 }
+
+// ---------- Merchant history ----------
+
+export interface MerchantHistory {
+  key: string;
+  name: string;
+  months: TrendMonth[];
+  /** Net spend over the 12 months shown. */
+  total: number;
+  visits: number;
+  average: number;
+  firstSeen: string | null;
+  lastSeen: string | null;
+  /** Categories this merchant's purchases were filed under, most used first. */
+  categories: { name: string; count: number }[];
+  /** Newest first. */
+  transactions: Transaction[];
+}
+
+/** Everything known about one merchant: monthly spend, habits, recent charges. */
+export function merchantHistory(
+  transactions: Transaction[],
+  key: string,
+  months = 12,
+  now = new Date()
+): MerchantHistory {
+  const mine = transactions
+    .filter((t) => t.type === "expense" && merchantKey(t.description) === key)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const windows = monthWindows(months, now);
+  const inWindow = mine.filter(
+    (t) => t.date >= windows[0].start && t.date <= windows[windows.length - 1].end
+  );
+  const purchases = inWindow.filter((t) => spendOf(t) > 0);
+  const visits = new Set(purchases.map((t) => t.split_group ?? t.id)).size;
+  const total = inWindow.reduce((s, t) => s + spendOf(t), 0);
+  const counts = new Map<string, number>();
+  for (const t of mine.filter((t) => spendOf(t) > 0)) {
+    counts.set(t.category, (counts.get(t.category) ?? 0) + 1);
+  }
+  return {
+    key,
+    name: titleCase(key),
+    months: windows.map((w) => ({
+      ...w,
+      amount: mine
+        .filter((t) => t.date >= w.start && t.date <= w.end)
+        .reduce((s, t) => s + spendOf(t), 0),
+    })),
+    total,
+    visits,
+    average: visits > 0 ? total / visits : 0,
+    firstSeen: mine.at(-1)?.date ?? null,
+    lastSeen: mine[0]?.date ?? null,
+    categories: [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count),
+    transactions: mine,
+  };
+}

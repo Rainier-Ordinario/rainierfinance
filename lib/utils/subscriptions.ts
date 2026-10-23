@@ -2,6 +2,7 @@ import {
   addMonths,
   addWeeks,
   addYears,
+  differenceInCalendarDays,
   differenceInCalendarMonths,
   parseISO,
   startOfDay,
@@ -151,4 +152,93 @@ export function detectRecurringCharges(
   }
 
   return detected.sort((a, b) => b.occurrences - a.occurrences);
+}
+
+// ---------- Price changes and stale subscriptions ----------
+
+/** Loose name match used to find a subscription's charges. */
+function compact(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Charges for a subscription, oldest first: purchases whose description contains its name. */
+export function subscriptionCharges(
+  sub: Subscription,
+  transactions: Transaction[]
+): Transaction[] {
+  const name = compact(sub.name);
+  if (!name) return [];
+  return transactions
+    .filter(
+      (t) =>
+        t.type === "expense" &&
+        Number(t.amount) < 0 &&
+        compact(t.description).includes(name)
+    )
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Days without a charge after which a subscription looks cancelled. */
+const STALE_AFTER_DAYS: Record<string, number> = {
+  weekly: 21,
+  monthly: 62,
+  yearly: 400,
+};
+
+export interface SubscriptionHealth {
+  /** The charged amount changed within the last ~4 months. */
+  priceChange: { from: number; to: number; date: string } | null;
+  /** The latest charge differs from the amount on file. */
+  amountMismatch: { charged: number; onFile: number } | null;
+  /** Active, but no charge for two billing cycles. */
+  staleSince: string | null;
+}
+
+/** How long a price change stays worth pointing out. */
+const PRICE_CHANGE_WINDOW_DAYS = 120;
+
+/** A price difference big enough to mention (not rounding or FX noise). */
+function differs(a: number, b: number): boolean {
+  return Math.abs(a - b) >= 0.5 && Math.abs(a - b) / Math.max(a, b) >= 0.02;
+}
+
+/**
+ * What the charges say about a subscription: a price increase (or cut),
+ * an amount on file that no longer matches, or charges that have stopped.
+ */
+export function subscriptionHealth(
+  sub: Subscription,
+  transactions: Transaction[],
+  now = new Date()
+): SubscriptionHealth {
+  const charges = subscriptionCharges(sub, transactions);
+  const amounts = charges.map((t) => Math.abs(Number(t.amount)));
+  const last = charges.at(-1);
+  const latest = amounts.at(-1);
+
+  // The most recent point where the charged amount changed, if recent.
+  let priceChange: SubscriptionHealth["priceChange"] = null;
+  for (let i = amounts.length - 1; i > 0; i--) {
+    if (differs(amounts[i], amounts[i - 1])) {
+      const date = charges[i].date;
+      if (differenceInCalendarDays(now, parseISO(date)) <= PRICE_CHANGE_WINDOW_DAYS) {
+        priceChange = { from: amounts[i - 1], to: amounts[i], date };
+      }
+      break;
+    }
+  }
+  const onFile = Number(sub.amount);
+  const amountMismatch =
+    latest !== undefined && differs(latest, onFile)
+      ? { charged: latest, onFile }
+      : null;
+  const staleAfter = STALE_AFTER_DAYS[sub.billing_cycle ?? "monthly"];
+  const staleSince =
+    sub.status === "active" &&
+    last &&
+    differenceInCalendarDays(now, parseISO(last.date)) > staleAfter
+      ? last.date
+      : null;
+
+  return { priceChange, amountMismatch, staleSince };
 }

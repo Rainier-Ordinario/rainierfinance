@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import {
   Card,
@@ -28,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CategoryIcon } from "@/components/shared/CategoryIcon";
+import { MerchantSheet } from "@/components/merchants/MerchantSheet";
 import { formatCAD, formatCADWhole } from "@/lib/utils/currency";
 import { toISODate } from "@/lib/utils/dates";
 import {
@@ -54,19 +54,15 @@ export function TopMerchants({
   transactions: Transaction[];
   categories: Category[];
 }) {
-  const router = useRouter();
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const [period, setPeriod] = useState<SpendingPeriod>("3_months");
   const [sortBy, setSortBy] = useState<SortBy>("total");
   const [showAll, setShowAll] = useState(false);
 
-  const { start, end, label, merchants, periodTotal } = useMemo(() => {
+  const { label, merchants, periodTotal } = useMemo(() => {
     const { from, to, months } = periodRange(period);
-    const start = toISODate(from);
-    const end = toISODate(to);
-    const merchants = topMerchants(transactions, start, end);
+    const merchants = topMerchants(transactions, toISODate(from), toISODate(to));
     return {
-      start,
-      end,
       label: periodLabel(from, to, months),
       merchants,
       periodTotal: merchants.reduce((s, m) => s + m.total, 0),
@@ -83,15 +79,6 @@ export function TopMerchants({
   const visible = showAll ? sorted : sorted.slice(0, INITIAL_VISIBLE);
   const maxTotal = merchants[0]?.total ?? 0;
 
-  function open(searchTerm: string) {
-    const params = new URLSearchParams({
-      type: "expense",
-      search: searchTerm,
-      from: start,
-      to: end,
-    });
-    router.push(`/transactions?${params}`);
-  }
 
   return (
     <Card>
@@ -153,17 +140,17 @@ export function TopMerchants({
                     <TableRow
                       key={m.key}
                       className="cursor-pointer"
-                      onClick={() => open(m.searchTerm)}
+                      onClick={() => setOpenKey(m.key)}
                     >
                       <TableCell>
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            open(m.searchTerm);
+                            setOpenKey(m.key);
                           }}
                           className="flex min-w-0 items-center gap-2 text-left focus-visible:underline focus-visible:outline-none"
-                          aria-label={`See ${m.name} transactions`}
+                          aria-label={`See ${m.name} history`}
                         >
                           <CategoryIcon
                             category={m.category}
@@ -225,6 +212,10 @@ export function TopMerchants({
           </>
         )}
       </CardContent>
+      <MerchantSheet
+        merchantKey={openKey}
+        onOpenChange={(o) => !o && setOpenKey(null)}
+      />
     </Card>
   );
 }
