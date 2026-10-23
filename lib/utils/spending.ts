@@ -392,3 +392,82 @@ export function topMerchants(
     })
     .sort((a, b) => b.total - a.total);
 }
+
+// ---------- Safe to spend ----------
+
+export const DEFAULT_SAVINGS_TARGET_PCT = 20;
+
+export interface SafeToSpend {
+  /** This month's income: received so far or the 3-month average, whichever is more. */
+  expectedIncome: number;
+  /** Fixed and essential costs expected this month (so far or usual, whichever is more). */
+  expectedFixed: number;
+  expectedEssential: number;
+  savingsTarget: number;
+  /** What's left for discretionary spending this whole month. */
+  wantsBudget: number;
+  spentBeforeToday: number;
+  spentToday: number;
+  /** Days left in the month, today included. */
+  daysLeft: number;
+  /** What can go to wants each remaining day, today included. */
+  dailyAllowance: number;
+  /** wantsBudget minus all discretionary spending so far (negative = over). */
+  remaining: number;
+}
+
+/**
+ * How much can go to wants today while still hitting the savings goal:
+ * expected income, minus what bills and essentials will cost this month,
+ * minus the savings target, minus wants already bought, spread over the
+ * days left. "Expected" takes the larger of so-far and usual, so a rent
+ * payment that hasn't landed yet is still reserved for.
+ */
+export function safeToSpend(
+  transactions: Transaction[],
+  categories: Category[],
+  savingsTargetPct: number,
+  now = new Date()
+): SafeToSpend | null {
+  const monthStart = toISODate(startOfMonth(now));
+  const today = toISODate(now);
+  const avgStart = toISODate(startOfMonth(subMonths(now, 3)));
+  const avgEnd = toISODate(endOfMonth(subMonths(now, 1)));
+
+  const incomeIn = (start: string, end: string) =>
+    transactions
+      .filter((t) => t.type === "income" && t.date >= start && t.date <= end)
+      .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
+
+  const expectedIncome = Math.max(
+    incomeIn(monthStart, today),
+    incomeIn(avgStart, avgEnd) / 3
+  );
+  if (expectedIncome <= 0) return null;
+
+  const soFar = kindTotals(transactions, categories, monthStart, today);
+  const usual = kindTotals(transactions, categories, avgStart, avgEnd);
+  const expectedFixed = Math.max(soFar.fixed, usual.fixed / 3);
+  const expectedEssential = Math.max(soFar.essential, usual.essential / 3);
+  const savingsTarget = (expectedIncome * savingsTargetPct) / 100;
+  const wantsBudget =
+    expectedIncome - expectedFixed - expectedEssential - savingsTarget;
+
+  const spentToday = kindTotals(transactions, categories, today, today).discretionary;
+  const spentBeforeToday = soFar.discretionary - spentToday;
+  const daysLeft = getDate(endOfMonth(now)) - getDate(now) + 1;
+  const remaining = wantsBudget - soFar.discretionary;
+
+  return {
+    expectedIncome,
+    expectedFixed,
+    expectedEssential,
+    savingsTarget,
+    wantsBudget,
+    spentBeforeToday,
+    spentToday,
+    daysLeft,
+    dailyAllowance: Math.max(0, (wantsBudget - spentBeforeToday) / daysLeft),
+    remaining,
+  };
+}

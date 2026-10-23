@@ -97,7 +97,16 @@ export function useUpdateUserSettings() {
       queryClient.invalidateQueries({ queryKey: ["user_settings"] });
       toast.success("Settings saved");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => {
+      // A column from a migration that hasn't been run yet.
+      if (/column|schema cache/i.test(err.message)) {
+        toast.error(
+          "This setting needs a quick database update — run the latest file in supabase/migrations."
+        );
+      } else {
+        toast.error(err.message);
+      }
+    },
   });
 }
 

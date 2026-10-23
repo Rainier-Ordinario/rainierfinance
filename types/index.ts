@@ -178,6 +178,8 @@ export interface UserSettings {
   dismissed_recurring: string[] | null;
   /** Learned merchantKey → category overrides (migration 005). */
   merchant_rules?: Record<string, string> | null;
+  /** Percent of income to save (migration 006). */
+  savings_target_pct?: number | null;
   updated_at: string;
 }
 

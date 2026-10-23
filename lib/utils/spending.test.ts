@@ -3,6 +3,7 @@ import {
   categoryBreakdown,
   categoryKind,
   categoryTrends,
+  safeToSpend,
   spendingMix,
   topMerchants,
   uncategorizedSummary,
@@ -170,5 +171,58 @@ describe("topMerchants", () => {
       category: "Dining",
       searchTerm: "starbucks",
     });
+  });
+});
+
+describe("safeToSpend", () => {
+  const income = (date: string, amount: number) =>
+    tx({ date, amount, type: "income", category: "Income" });
+  const history = [
+    ...["07", "08", "09"].flatMap((m) => [
+      income(`2026-${m}-15`, 4000),
+      tx({ date: `2026-${m}-01`, category: "Bills", amount: -1500 }),
+      tx({ date: `2026-${m}-05`, category: "Groceries", amount: -500 }),
+    ]),
+  ];
+
+  it("reserves usual bills not yet charged and spreads the rest over the month", () => {
+    const s = safeToSpend(
+      [
+        ...history,
+        tx({ date: "2026-10-10", amount: -200 }), // dining before today
+        tx({ date: "2026-10-22", amount: -30 }), // dining today
+      ],
+      [],
+      20,
+      now
+    )!;
+    expect(s.expectedIncome).toBe(4000);
+    expect(s.expectedFixed).toBe(1500);
+    expect(s.expectedEssential).toBe(500);
+    expect(s.savingsTarget).toBe(800);
+    expect(s.wantsBudget).toBe(1200);
+    expect(s.spentBeforeToday).toBe(200);
+    expect(s.spentToday).toBe(30);
+    expect(s.daysLeft).toBe(10); // Oct 22–31
+    expect(s.dailyAllowance).toBe(100);
+    expect(s.remaining).toBe(970);
+  });
+
+  it("uses actual income and costs when they beat the usual", () => {
+    const s = safeToSpend(
+      [...history, income("2026-10-15", 6000), tx({ date: "2026-10-01", category: "Bills", amount: -1800 })],
+      [],
+      0,
+      now
+    )!;
+    expect(s.expectedIncome).toBe(6000);
+    expect(s.expectedFixed).toBe(1800);
+  });
+
+  it("never goes below zero per day, and needs income to say anything", () => {
+    const s = safeToSpend([...history, tx({ date: "2026-10-03", amount: -5000 })], [], 20, now)!;
+    expect(s.dailyAllowance).toBe(0);
+    expect(s.remaining).toBeLessThan(0);
+    expect(safeToSpend([tx({})], [], 20, now)).toBeNull();
   });
 });

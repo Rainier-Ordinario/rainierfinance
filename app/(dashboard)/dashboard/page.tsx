@@ -37,6 +37,7 @@ import {
 } from "@/components/dashboard/MetricCards";
 import { SpendingByCategory } from "@/components/dashboard/SpendingByCategory";
 import { SpendingMixCard } from "@/components/dashboard/SpendingMixCard";
+import { SafeToSpendCard } from "@/components/dashboard/SafeToSpendCard";
 import { UncategorizedBanner } from "@/components/dashboard/UncategorizedBanner";
 import { CashFlowChart } from "@/components/dashboard/CashFlowChart";
 import { UtilizationWidget } from "@/components/dashboard/UtilizationWidget";
@@ -140,6 +141,10 @@ export default function DashboardPage() {
           <CashFlowChart data={stats.cashFlow} />
         </div>
         <div className="space-y-4 lg:col-span-2">
+          <SafeToSpendCard
+            transactions={transactions.data ?? []}
+            categories={categories.data ?? []}
+          />
           <SpendingMixCard
             transactions={transactions.data ?? []}
             categories={categories.data ?? []}
