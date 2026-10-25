@@ -39,6 +39,20 @@ const INTERNAL_TRANSFER_RE =
 const INVESTMENT_FUNDING_RE =
   /e-transfer request fulfilled coinbase|wealthsimple invest/i;
 
+/**
+ * Whether an RBC description moves money between the user's own accounts:
+ * "transfer" for card payments and internal moves, "investment" for funding
+ * investment/crypto accounts, null for real income or spending.
+ */
+export function rbcTransferKind(
+  description: string
+): "transfer" | "investment" | null {
+  if (CC_PAYMENT_RE.test(description) || INTERNAL_TRANSFER_RE.test(description))
+    return "transfer";
+  if (INVESTMENT_FUNDING_RE.test(description)) return "investment";
+  return null;
+}
+
 export function looksLikeRbcCsv(headerRow: string[]): boolean {
   return RBC_HEADERS.every((h) =>
     headerRow.some((col) => col.trim().toLowerCase() === h.toLowerCase())
@@ -98,10 +112,9 @@ export function parseRbcCsv(csvText: string): RbcParseResult {
     // Money moving between the user's own accounts (card payments,
     // chequing<->savings, funding investment accounts) must be transfers —
     // typing them income/expense double-counts every internal move.
-    const isTransfer =
-      CC_PAYMENT_RE.test(description) ||
-      INTERNAL_TRANSFER_RE.test(description);
-    const isInvestmentFunding = INVESTMENT_FUNDING_RE.test(description);
+    const transferKind = rbcTransferKind(description);
+    const isTransfer = transferKind === "transfer";
+    const isInvestmentFunding = transferKind === "investment";
 
     transactions.push({
       date,

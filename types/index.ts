@@ -67,8 +67,27 @@ export interface Account {
   color: string;
   account_number_last4: string | null;
   is_active: boolean;
+  /** The bank connection this account syncs from (migration 008). */
+  plaid_item_id?: string | null;
+  plaid_account_id?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type PlaidItemStatus = "active" | "login_required" | "error";
+
+/** A linked bank login (migration 008). Its access token is server-only. */
+export interface PlaidItem {
+  id: string;
+  user_id: string;
+  item_id: string;
+  institution_id: string | null;
+  institution_name: string;
+  cursor: string | null;
+  status: PlaidItemStatus;
+  error_code: string | null;
+  last_synced_at: string | null;
+  created_at: string;
 }
 
 export interface Transaction {
@@ -87,6 +106,10 @@ export interface Transaction {
   split_group?: string | null;
   /** The bank's original amount for a split row, for re-import matching. */
   split_original_amount?: number | null;
+  /** Set on rows synced from the bank (migration 008). */
+  plaid_transaction_id?: string | null;
+  /** Not yet posted by the bank; the amount may still change. */
+  pending?: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -6,6 +6,7 @@ import { Menu, Search } from "lucide-react";
 import { useFinanceStore } from "@/store/useFinanceStore";
 import { Button } from "@/components/ui/button";
 import { AlertsBell } from "@/components/layout/AlertsBell";
+import { useAutoSync } from "@/lib/hooks/useBankSync";
 
 const PAGE_META: Record<string, { title: string; subtitle: string }> = {
   "/dashboard": { title: "Home", subtitle: "Your money at a glance" },
@@ -39,6 +40,8 @@ const PAGE_META: Record<string, { title: string; subtitle: string }> = {
 export function TopBar() {
   const pathname = usePathname();
   const toggleSidebar = useFinanceStore((s) => s.toggleSidebar);
+  // The top bar is on every page, so linked banks catch up wherever you land.
+  useAutoSync();
 
   const meta = Object.entries(PAGE_META).find(([prefix]) =>
     pathname.startsWith(prefix)

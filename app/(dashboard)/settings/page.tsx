@@ -6,6 +6,7 @@ import { CardSkeleton } from "@/components/shared/CardSkeleton";
 import { ProfileForm } from "@/components/settings/ProfileForm";
 import { PreferencesForm } from "@/components/settings/PreferencesForm";
 import { AccountsCard } from "@/components/settings/AccountsCard";
+import { BankConnectionsCard } from "@/components/settings/BankConnectionsCard";
 import { CategoryGroupsCard } from "@/components/settings/CategoryGroupsCard";
 import { useAccounts } from "@/lib/hooks/useAccounts";
 import { useCategories } from "@/lib/hooks/useCategories";
@@ -59,6 +60,7 @@ export default function SettingsPage() {
             settings={settings.data ?? null}
             accounts={cashAccounts}
           />
+          <BankConnectionsCard accounts={accounts.data ?? []} />
           <AccountsCard accounts={accounts.data ?? []} />
           <CategoryGroupsCard categories={categories.data ?? []} />
         </div>

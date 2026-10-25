@@ -19,9 +19,9 @@ const STEPS: {
 }[] = [
   {
     icon: Landmark,
-    title: "Add an account",
-    description: "Create your chequing or credit card account, or import an RBC CSV.",
-    href: "/transactions",
+    title: "Connect your bank",
+    description: "Link RBC or another bank and transactions sync automatically.",
+    href: "/settings",
   },
   {
     icon: LineChart,

@@ -8,6 +8,7 @@ import {
   Download,
   Filter,
   Plus,
+  RefreshCw,
   Tag,
   Trash2,
   Upload,
@@ -39,6 +40,7 @@ import { TransactionTable } from "@/components/transactions/TransactionTable";
 import { TransactionModal } from "@/components/transactions/TransactionModal";
 import { FilterPanel } from "@/components/transactions/FilterPanel";
 import { CSVImporter } from "@/components/transactions/CSVImporter";
+import { ConnectBankButton } from "@/components/bank/ConnectBankButton";
 import { TrendPanel } from "@/components/transactions/TrendPanel";
 import { PossibleRefunds } from "@/components/transactions/PossibleRefunds";
 import { SplitDialog } from "@/components/transactions/SplitDialog";
@@ -54,6 +56,7 @@ import {
 import { useAccounts } from "@/lib/hooks/useAccounts";
 import { useCategories } from "@/lib/hooks/useCategories";
 import { useLearnMerchantCategory } from "@/lib/hooks/useMerchantRules";
+import { usePlaidItems, useSyncBanks } from "@/lib/hooks/useBankSync";
 import { downloadCsv } from "@/lib/utils/exportCsv";
 import type { Transaction, TransactionType } from "@/types";
 
@@ -126,6 +129,9 @@ function TransactionsContent() {
   const deleteTxs = useDeleteTransactions();
   const bulkCategorize = useBulkCategorize();
   const learn = useLearnMerchantCategory();
+  const banks = usePlaidItems();
+  const syncBanks = useSyncBanks();
+  const hasBanks = (banks.data ?? []).length > 0;
 
   const rows = transactions.data ?? [];
   const hasActiveFilters = Object.values(filters).some(
@@ -162,7 +168,27 @@ function TransactionsContent() {
         }
         actions={
           <>
-            <Button variant="outline" onClick={() => setImportOpen(true)}>
+            {hasBanks ? (
+              <Button
+                variant="outline"
+                onClick={() => syncBanks.mutate({})}
+                disabled={syncBanks.isPending}
+              >
+                <RefreshCw
+                  className={`size-4 ${syncBanks.isPending ? "animate-spin" : ""}`}
+                  aria-hidden
+                />
+                {syncBanks.isPending ? "Syncing…" : "Sync"}
+              </Button>
+            ) : (
+              <ConnectBankButton variant="outline" />
+            )}
+            {/* For banks Plaid doesn't cover, and history older than it reaches. */}
+            <Button
+              variant="ghost"
+              onClick={() => setImportOpen(true)}
+              title="For banks that can't be connected, or older history"
+            >
               <Upload className="size-4" aria-hidden />
               Import CSV
             </Button>
@@ -291,7 +317,7 @@ function TransactionsContent() {
               description={
                 hasActiveFilters
                   ? "Try loosening your filters."
-                  : "Add a transaction manually or import your RBC CSV export."
+                  : "Connect your bank to sync transactions automatically, or add one manually."
               }
               actionLabel={hasActiveFilters ? undefined : "Add transaction"}
               onAction={

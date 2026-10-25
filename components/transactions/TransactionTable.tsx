@@ -257,6 +257,15 @@ export function TransactionTable({
             split
           </Badge>
         )}
+        {t.pending && (
+          <Badge
+            variant="outline"
+            className="ml-1 text-muted-foreground"
+            title="Not posted by the bank yet; the amount may still change"
+          >
+            pending
+          </Badge>
+        )}
       </TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-1">

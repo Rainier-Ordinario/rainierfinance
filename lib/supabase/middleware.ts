@@ -7,6 +7,8 @@ const PUBLIC_PATHS = [
   "/auth",
   "/forgot-password",
   "/reset-password",
+  // Plaid's server calls this; it checks Plaid's signature instead.
+  "/api/plaid/webhook",
 ];
 
 export async function updateSession(request: NextRequest) {
