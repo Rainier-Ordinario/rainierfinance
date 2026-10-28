@@ -33,7 +33,12 @@ export interface AlertInputs {
   challenges: Challenge[];
   rules: MerchantRules;
   savingsTargetPct: number;
+  /** A bank syncs on its own, so there's no need to nudge for CSV imports. */
+  bankConnected?: boolean;
 }
+
+/** Nudge for a fresh CSV import once the newest data is this old. */
+const STALE_IMPORT_DAYS = 7;
 
 const SEVERITY_ORDER: Record<AlertSeverity, number> = { high: 0, medium: 1, info: 2 };
 
@@ -154,6 +159,24 @@ export function buildAlerts(inputs: AlertInputs, now = new Date()): Alert[] {
       detail: `${formatCADWhole(stuck.amount)} (${Math.round(stuck.share)}%) of recent spending`,
       href: `/transactions?${new URLSearchParams({ type: "expense", category: "Other", from: stuck.start, to: stuck.end })}`,
     });
+  }
+
+  if (!inputs.bankConnected && inputs.transactions.length > 0) {
+    const lastAdded = inputs.transactions.reduce(
+      (max, t) => (t.created_at > max ? t.created_at : max),
+      ""
+    );
+    const days = differenceInCalendarDays(now, parseISO(lastAdded));
+    if (days >= STALE_IMPORT_DAYS) {
+      alerts.push({
+        // Keyed by the import day, so dismissing it lasts until the next import.
+        id: `import-stale:${lastAdded.slice(0, 10)}`,
+        severity: "info",
+        title: `Time for an import — last one was ${days} days ago`,
+        detail: "Download all accounts from RBC as one CSV and drop it in.",
+        href: "/transactions?import=1",
+      });
+    }
   }
 
   return alerts.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);

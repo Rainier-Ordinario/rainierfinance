@@ -17,6 +17,7 @@ import { useUserSettings } from "@/lib/hooks/useSettings";
 import { useSubscriptions } from "@/lib/hooks/useSubscriptions";
 import { useTransactions } from "@/lib/hooks/useTransactions";
 import { buildAlerts, type AlertSeverity } from "@/lib/utils/alerts";
+import { usePlaidItems } from "@/lib/hooks/useBankSync";
 import { DEFAULT_SAVINGS_TARGET_PCT } from "@/lib/utils/spending";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +46,7 @@ export function AlertsBell() {
   const challenges = useChallenges();
   const settings = useUserSettings();
   const rules = useMerchantRules();
+  const banks = usePlaidItems();
   const [dismissed, setDismissed] = useState(readDismissed);
   const [open, setOpen] = useState(false);
 
@@ -59,6 +61,7 @@ export function AlertsBell() {
             // Missing until migration 007; challenges just don't alert.
             challenges: challenges.data ?? [],
             rules,
+            bankConnected: (banks.data ?? []).some((b) => b.status === "active"),
             savingsTargetPct: Number(
               settings.data?.savings_target_pct ?? DEFAULT_SAVINGS_TARGET_PCT
             ),
@@ -72,6 +75,7 @@ export function AlertsBell() {
       challenges.data,
       settings.data,
       rules,
+      banks.data,
       dismissed,
     ]
   );

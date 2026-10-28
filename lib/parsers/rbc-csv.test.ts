@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  groupRbcRowsByAccount,
   looksLikeRbcCsv,
   parseRbcCsv,
   rbcAccountTypeToAppType,
@@ -77,5 +78,24 @@ describe("rbcAccountTypeToAppType", () => {
     expect(rbcAccountTypeToAppType("MasterCard")).toBe("credit_card");
     expect(rbcAccountTypeToAppType("Savings")).toBe("savings");
     expect(rbcAccountTypeToAppType("Chequing")).toBe("chequing");
+  });
+});
+
+describe("groupRbcRowsByAccount", () => {
+  it("splits an all-accounts export and matches accounts by last 4 digits", () => {
+    const { transactions, detectedAccounts } = parseRbcCsv(SAMPLE);
+    const groups = groupRbcRowsByAccount(transactions, detectedAccounts, [
+      { id: "visa-acct", account_number_last4: "1234" },
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toMatchObject({ last4: "1234", accountId: "visa-acct" });
+    expect(groups[0].rows).toHaveLength(2);
+    expect(groups[1]).toMatchObject({
+      last4: "5678",
+      accountId: null,
+      newName: "RBC Chequing",
+      newType: "chequing",
+    });
+    expect(groups[1].rows).toHaveLength(2);
   });
 });

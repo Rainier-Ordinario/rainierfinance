@@ -69,3 +69,25 @@ describe("buildAlerts", () => {
     expect(buildAlerts(base, now)).toEqual([]);
   });
 });
+
+describe("stale import nudge", () => {
+  const added = (created_at: string) => [tx({ created_at, date: "2026-10-01" })];
+
+  it("asks for a CSV import a week after the last one", () => {
+    const alerts = buildAlerts({ ...base, transactions: added("2026-10-14T18:00:00Z") }, now);
+    expect(alerts.map((a) => a.id)).toContain("import-stale:2026-10-14");
+    expect(alerts.find((a) => a.id.startsWith("import-stale"))?.href).toBe(
+      "/transactions?import=1"
+    );
+  });
+
+  it("stays quiet after a recent import or when a bank syncs", () => {
+    expect(buildAlerts({ ...base, transactions: added("2026-10-20T18:00:00Z") }, now)).toEqual([]);
+    expect(
+      buildAlerts(
+        { ...base, transactions: added("2026-10-01T18:00:00Z"), bankConnected: true },
+        now
+      )
+    ).toEqual([]);
+  });
+});

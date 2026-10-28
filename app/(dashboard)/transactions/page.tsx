@@ -91,7 +91,10 @@ function TransactionsContent() {
     () => searchParams.has("category") || searchParams.has("from")
   );
   const [modalOpen, setModalOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
+  // ?import=1 (from the "time for an import" alert) opens the importer.
+  const [importOpen, setImportOpen] = useState(
+    () => searchParams.get("import") === "1"
+  );
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [deleting, setDeleting] = useState<Transaction | null>(null);
   const [splitting, setSplitting] = useState<Transaction | null>(null);

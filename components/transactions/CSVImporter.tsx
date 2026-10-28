@@ -29,9 +29,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  groupRbcRowsByAccount,
   parseRbcCsv,
   looksLikeRbcCsv,
-  rbcAccountTypeToAppType,
+  type RbcAccountGroup,
   type RbcDetectedAccount,
 } from "@/lib/parsers/rbc-csv";
 import { Input } from "@/components/ui/input";
@@ -53,11 +54,21 @@ import {
 import { useImportTransactions } from "@/lib/hooks/useTransactions";
 import { useUpsertSubscription } from "@/lib/hooks/useSubscriptions";
 import { formatCAD } from "@/lib/utils/currency";
+import { cn } from "@/lib/utils";
 import { toISODate } from "@/lib/utils/dates";
 import { addMonths, parseISO } from "date-fns";
 import type { Account, ParsedCsvTransaction } from "@/types";
 
 type ColumnKey = "date" | "description" | "amount" | "ignore";
+
+/** A detected subscription and the account its charges came from. */
+type Candidate = SubscriptionCandidate & { accountId: string | null };
+
+const TYPE_LABELS = {
+  chequing: "Chequing",
+  savings: "Savings",
+  credit_card: "Credit card",
+} as const;
 
 export function CSVImporter({
   open,
@@ -77,15 +88,15 @@ export function CSVImporter({
     [existing.data]
   );
   const [rows, setRows] = useState<ParsedCsvTransaction[]>([]);
+  // RBC files: rows split by account, each matched or to be created.
+  const [groups, setGroups] = useState<RbcAccountGroup[]>([]);
+  const [dragging, setDragging] = useState(false);
   const [rawGrid, setRawGrid] = useState<string[][]>([]);
   const [mapping, setMapping] = useState<Record<number, ColumnKey>>({});
   const [needsMapping, setNeedsMapping] = useState(false);
   const [accountId, setAccountId] = useState<string>("");
   const [parseErrors, setParseErrors] = useState<string[]>([]);
-  const [candidates, setCandidates] = useState<SubscriptionCandidate[]>([]);
-  const [detectedAccounts, setDetectedAccounts] = useState<
-    RbcDetectedAccount[]
-  >([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [showNewAccount, setShowNewAccount] = useState(false);
   const [newAccount, setNewAccount] = useState({
     name: "",
@@ -100,34 +111,18 @@ export function CSVImporter({
 
   function reset() {
     setRows([]);
+    setGroups([]);
     setRawGrid([]);
     setMapping({});
     setNeedsMapping(false);
     setParseErrors([]);
     setCandidates([]);
-    setDetectedAccounts([]);
     setShowNewAccount(false);
     setAccountId("");
   }
 
-  /** Prefill the new-account form from what the RBC file tells us. */
-  function prefillNewAccount(detected: RbcDetectedAccount | undefined) {
-    if (!detected) {
-      setNewAccount({
-        name: "",
-        type: "chequing",
-        institution: "RBC",
-        last4: "",
-      });
-      return;
-    }
-    const type = rbcAccountTypeToAppType(detected.accountType);
-    setNewAccount({
-      name: `RBC ${detected.accountType}`,
-      type,
-      institution: "RBC",
-      last4: detected.last4,
-    });
+  function resetNewAccount() {
+    setNewAccount({ name: "", type: "chequing", institution: "RBC", last4: "" });
   }
 
   async function createAccount() {
@@ -148,57 +143,74 @@ export function CSVImporter({
     setShowNewAccount(false);
   }
 
-  function handleFile(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = String(reader.result);
-      const preview = Papa.parse<string[]>(text, { skipEmptyLines: true });
-      const header = (preview.data[0] ?? []).map(String);
+  /**
+   * RBC exports, one or several, and with one account or all of them, go
+   * straight to a per-account summary. Any other single file gets the
+   * column-mapping step.
+   */
+  async function handleFiles(files: File[]) {
+    const csvs = files.filter(
+      (f) => f.name.toLowerCase().endsWith(".csv") || f.type === "text/csv"
+    );
+    if (csvs.length === 0) {
+      toast.error("Choose a .csv file");
+      return;
+    }
+    const texts = await Promise.all(csvs.map((f) => f.text()));
+    const headers = texts.map((text) =>
+      (Papa.parse<string[]>(text, { skipEmptyLines: true, preview: 1 }).data[0] ?? []).map(String)
+    );
 
-      if (looksLikeRbcCsv(header)) {
-        const { transactions, errors, detectedAccounts: detected } =
-          parseRbcCsv(text);
-        setRows(
-          classifyRefunds(
-            applyMerchantRules(transactions, merchantRules),
-            knownMerchants,
-            merchantRules
-          )
-        );
-        setParseErrors(errors);
-        setDetectedAccounts(detected);
-        setNeedsMapping(false);
-        // Auto-match account by last-4 from the file
-        const last4 = transactions.find((t) => t.accountLast4)?.accountLast4;
-        const matched = accounts.find(
-          (a) => a.account_number_last4 && a.account_number_last4 === last4
-        );
-        if (matched) {
-          setAccountId(matched.id);
-        } else {
-          // No matching account yet — offer to create one from the file info
-          prefillNewAccount(detected[0]);
-          setShowNewAccount(true);
+    if (headers.every(looksLikeRbcCsv)) {
+      const transactions: ParsedCsvTransaction[] = [];
+      const detected: RbcDetectedAccount[] = [];
+      const errors: string[] = [];
+      texts.forEach((text, i) => {
+        const parsed = parseRbcCsv(text);
+        transactions.push(...parsed.transactions);
+        for (const d of parsed.detectedAccounts) {
+          if (!detected.some((x) => x.last4 === d.last4)) detected.push(d);
         }
-        toast.success(`Detected RBC format — ${transactions.length} rows parsed`);
-      } else {
-        // Unknown format: show manual column mapping
-        setRawGrid(preview.data.map((r) => r.map(String)));
-        setNeedsMapping(true);
-        const guess: Record<number, ColumnKey> = {};
-        header.forEach((h, i) => {
-          const lower = h.toLowerCase();
-          if (lower.includes("date")) guess[i] = "date";
-          else if (lower.includes("desc") || lower.includes("merchant"))
-            guess[i] = "description";
-          else if (lower.includes("amount") || lower.includes("cad"))
-            guess[i] = "amount";
-          else guess[i] = "ignore";
-        });
-        setMapping(guess);
-      }
-    };
-    reader.readAsText(file);
+        errors.push(
+          ...parsed.errors.map((e) => (csvs.length > 1 ? `${csvs[i].name} ${e}` : e))
+        );
+      });
+      const classified = classifyRefunds(
+        applyMerchantRules(transactions, merchantRules),
+        knownMerchants,
+        merchantRules
+      );
+      const split = groupRbcRowsByAccount(classified, detected, accounts);
+      setGroups(split);
+      setRows(classified);
+      setParseErrors(errors);
+      setNeedsMapping(false);
+      return;
+    }
+
+    if (csvs.length > 1) {
+      toast.error(
+        "Only RBC exports can be imported together — add other files one at a time."
+      );
+      return;
+    }
+
+    // Unknown format: show manual column mapping
+    const preview = Papa.parse<string[]>(texts[0], { skipEmptyLines: true });
+    const header = headers[0];
+    setRawGrid(preview.data.map((r) => r.map(String)));
+    setNeedsMapping(true);
+    const guess: Record<number, ColumnKey> = {};
+    header.forEach((h, i) => {
+      const lower = h.toLowerCase();
+      if (lower.includes("date")) guess[i] = "date";
+      else if (lower.includes("desc") || lower.includes("merchant"))
+        guess[i] = "description";
+      else if (lower.includes("amount") || lower.includes("cad"))
+        guess[i] = "amount";
+      else guess[i] = "ignore";
+    });
+    setMapping(guess);
   }
 
   function applyMapping() {
@@ -248,27 +260,19 @@ export function CSVImporter({
     total: number;
   } | null>(null);
 
-  function confirmImport() {
-    if (!accountId) {
-      toast.error("Pick which account these transactions belong to");
-      return;
-    }
-    setImportProgress({ done: 0, total: rows.length });
+  function runImport(
+    transactions: Parameters<typeof importTxs.mutate>[0]["transactions"],
+    detect: () => Candidate[]
+  ) {
+    setImportProgress({ done: 0, total: transactions.length });
     importTxs.mutate(
       {
-        transactions: rows.map((r) => ({
-          date: r.date,
-          description: r.description,
-          amount: r.amount,
-          category: r.category,
-          type: r.type,
-          account_id: accountId,
-        })),
+        transactions,
         onProgress: (done, total) => setImportProgress({ done, total }),
       },
       {
         onSuccess: () => {
-          const detected = detectSubscriptionCandidates(rows);
+          const detected = detect();
           if (detected.length > 0) {
             setCandidates(detected);
           } else {
@@ -281,14 +285,80 @@ export function CSVImporter({
     );
   }
 
-  function addCandidate(candidate: SubscriptionCandidate) {
+  /** RBC: create any accounts that don't exist yet, then import every group at once. */
+  async function confirmRbcImport() {
+    if (groups.some((g) => !g.accountId && !g.newName.trim())) {
+      toast.error("Give each new account a name");
+      return;
+    }
+    const resolved: RbcAccountGroup[] = [];
+    try {
+      for (const g of groups) {
+        if (g.accountId) {
+          resolved.push(g);
+          continue;
+        }
+        const created = await upsertAccount.mutateAsync({
+          name: g.newName.trim(),
+          type: g.newType,
+          institution: "RBC",
+          account_number_last4: /^\d{4}$/.test(g.last4) ? g.last4 : null,
+          balance: 0,
+        });
+        resolved.push({ ...g, accountId: created.id });
+      }
+    } catch {
+      return; // the hook already showed the error
+    }
+    setGroups(resolved);
+    runImport(
+      resolved.flatMap((g) =>
+        g.rows.map((r) => ({
+          date: r.date,
+          description: r.description,
+          amount: r.amount,
+          category: r.category,
+          type: r.type,
+          account_id: g.accountId!,
+        }))
+      ),
+      () =>
+        resolved.flatMap((g) =>
+          detectSubscriptionCandidates(g.rows).map((c) => ({
+            ...c,
+            accountId: g.accountId,
+          }))
+        )
+    );
+  }
+
+  function confirmImport() {
+    if (!accountId) {
+      toast.error("Pick which account these transactions belong to");
+      return;
+    }
+    runImport(
+      rows.map((r) => ({
+        date: r.date,
+        description: r.description,
+        amount: r.amount,
+        category: r.category,
+        type: r.type,
+        account_id: accountId,
+      })),
+      () =>
+        detectSubscriptionCandidates(rows).map((c) => ({ ...c, accountId }))
+    );
+  }
+
+  function addCandidate(candidate: Candidate) {
     upsertSubscription.mutate(
       {
         name: candidate.name,
         amount: candidate.amount,
         billing_cycle: "monthly",
         next_billing_date: toISODate(addMonths(parseISO(candidate.lastDate), 1)),
-        account_id: accountId || null,
+        account_id: candidate.accountId,
         status: "active",
       },
       {
@@ -299,6 +369,69 @@ export function CSVImporter({
             )
           ),
       }
+    );
+  }
+
+  /** Skipped-row note, a preview of the rows, and the import buttons. */
+  function renderPreview(onConfirm: () => void) {
+    return (
+      <>
+            {parseErrors.length > 0 && (
+              <p className="text-xs text-warning">
+                {parseErrors.length} rows skipped:{" "}
+                {parseErrors.slice(0, 3).join("; ")}
+                {parseErrors.length > 3 && "…"}
+              </p>
+            )}
+
+            <div className="max-h-72 overflow-y-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.slice(0, 50).map((r, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="text-numeric text-xs">
+                        {r.date}
+                      </TableCell>
+                      <TableCell className="max-w-48 truncate text-xs">
+                        {r.description}
+                      </TableCell>
+                      <TableCell className="text-xs">{r.category}</TableCell>
+                      <TableCell className="text-numeric text-right text-xs">
+                        {formatCAD(r.amount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {rows.length > 50 && (
+                <p className="px-3 py-2 text-center text-xs text-muted-foreground">
+                  …and {rows.length - 50} more
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={reset}>
+                Start over
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={onConfirm}
+                disabled={importTxs.isPending || upsertAccount.isPending}
+              >
+                <Upload className="size-4" aria-hidden />
+                Import {rows.length}
+              </Button>
+            </div>
+      </>
     );
   }
 
@@ -315,8 +448,8 @@ export function CSVImporter({
         <DialogHeader>
           <DialogTitle>Import CSV</DialogTitle>
           <DialogDescription>
-            RBC exports are detected automatically; other files can be mapped
-            manually.
+            Drop in RBC exports — one account or all of them — and each row
+            lands in the right account. Other files can be mapped manually.
           </DialogDescription>
         </DialogHeader>
 
@@ -381,26 +514,98 @@ export function CSVImporter({
             </Button>
           </div>
         ) : rows.length === 0 && !needsMapping ? (
-          /* Step 1: pick a file */
+          /* Step 1: pick or drop files */
           <button
             type="button"
             onClick={() => fileInput.current?.click()}
-            className="flex flex-col items-center gap-2 rounded-xl border border-dashed py-12 text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              handleFiles([...e.dataTransfer.files]);
+            }}
+            className={cn(
+              "flex flex-col items-center gap-2 rounded-xl border border-dashed py-12 text-muted-foreground transition-colors hover:border-primary hover:text-foreground",
+              dragging && "border-primary bg-primary/5 text-foreground"
+            )}
           >
             <FileUp className="size-8" aria-hidden />
-            <span className="text-sm">Click to choose a CSV file</span>
+            <span className="text-sm">Drop CSV files here, or click to choose</span>
+            <span className="text-xs">
+              Tip: in RBC Online Banking, download &ldquo;All accounts&rdquo; as one CSV
+            </span>
             <input
               ref={fileInput}
               type="file"
               accept=".csv,text/csv"
+              multiple
               className="hidden"
               onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleFile(file);
+                const files = [...(e.target.files ?? [])];
+                if (files.length > 0) handleFiles(files);
                 e.target.value = "";
               }}
             />
           </button>
+        ) : groups.length > 0 ? (
+          /* RBC: one line per account, matched by its last 4 digits */
+          <div className="space-y-4">
+            <p className="text-sm">
+              {rows.length} transactions across {groups.length}{" "}
+              {groups.length === 1 ? "account" : "accounts"}. Rows you&apos;ve
+              already imported are skipped.
+            </p>
+            <ul className="divide-y rounded-lg border">
+              {groups.map((g, i) => {
+                const existing = accounts.find((a) => a.id === g.accountId);
+                const dates = g.rows.map((r) => r.date).sort();
+                return (
+                  <li
+                    key={g.last4 || i}
+                    className="flex flex-wrap items-center gap-3 px-3 py-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      {existing ? (
+                        <p className="truncate text-sm font-medium">
+                          {existing.name}
+                        </p>
+                      ) : (
+                        <Input
+                          aria-label={`Name for new account ····${g.last4}`}
+                          value={g.newName}
+                          className="h-8 max-w-64"
+                          onChange={(e) =>
+                            setGroups((prev) =>
+                              prev.map((x, j) =>
+                                j === i ? { ...x, newName: e.target.value } : x
+                              )
+                            )
+                          }
+                        />
+                      )}
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {g.last4 ? `····${g.last4} · ` : ""}
+                        {dates[0]} → {dates[dates.length - 1]}
+                      </p>
+                    </div>
+                    {!existing && (
+                      <Badge variant="outline">
+                        New {TYPE_LABELS[g.newType].toLowerCase()} account
+                      </Badge>
+                    )}
+                    <span className="text-numeric w-16 text-right text-sm">
+                      {g.rows.length} rows
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            {renderPreview(confirmRbcImport)}
+          </div>
         ) : needsMapping ? (
           /* Step 2a: column mapping for unknown formats */
           <div className="space-y-4">
@@ -484,7 +689,7 @@ export function CSVImporter({
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    prefillNewAccount(detectedAccounts[0]);
+                    resetNewAccount();
                     setShowNewAccount((v) => !v);
                   }}
                 >
@@ -493,17 +698,6 @@ export function CSVImporter({
                 </Button>
               </div>
             </div>
-
-            {detectedAccounts.length > 1 && (
-              <p className="text-xs text-warning">
-                This file contains {detectedAccounts.length} accounts (
-                {detectedAccounts
-                  .map((d) => `${d.accountType} ····${d.last4}`)
-                  .join(", ")}
-                ). All rows import into the single account you pick — export
-                one account at a time for a clean split.
-              </p>
-            )}
 
             {showNewAccount && (
               <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
@@ -592,61 +786,7 @@ export function CSVImporter({
               </div>
             )}
 
-            {parseErrors.length > 0 && (
-              <p className="text-xs text-warning">
-                {parseErrors.length} rows skipped:{" "}
-                {parseErrors.slice(0, 3).join("; ")}
-                {parseErrors.length > 3 && "…"}
-              </p>
-            )}
-
-            <div className="max-h-72 overflow-y-auto rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.slice(0, 50).map((r, i) => (
-                    <TableRow key={i}>
-                      <TableCell className="text-numeric text-xs">
-                        {r.date}
-                      </TableCell>
-                      <TableCell className="max-w-48 truncate text-xs">
-                        {r.description}
-                      </TableCell>
-                      <TableCell className="text-xs">{r.category}</TableCell>
-                      <TableCell className="text-numeric text-right text-xs">
-                        {formatCAD(r.amount)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {rows.length > 50 && (
-                <p className="px-3 py-2 text-center text-xs text-muted-foreground">
-                  …and {rows.length - 50} more
-                </p>
-              )}
-            </div>
-
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={reset}>
-                Start over
-              </Button>
-              <Button
-                className="flex-1"
-                onClick={confirmImport}
-                disabled={importTxs.isPending}
-              >
-                <Upload className="size-4" aria-hidden />
-                Import {rows.length}
-              </Button>
-            </div>
+            {renderPreview(confirmImport)}
           </div>
         )}
       </DialogContent>

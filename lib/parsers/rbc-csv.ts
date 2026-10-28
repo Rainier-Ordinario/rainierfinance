@@ -151,3 +151,49 @@ export function rbcAccountTypeToAppType(
   if (lower.includes("sav")) return "savings";
   return "chequing";
 }
+
+export interface RbcAccountGroup {
+  last4: string;
+  /** Raw RBC "Account Type", e.g. "Visa". */
+  accountType: string;
+  rows: ParsedCsvTransaction[];
+  /** The existing account with these last 4 digits, or null to create one. */
+  accountId: string | null;
+  /** Name and type for the account to create when accountId is null. */
+  newName: string;
+  newType: "chequing" | "savings" | "credit_card";
+}
+
+/**
+ * Split RBC rows by account number and match each account to an existing
+ * one by its last 4 digits, so a single all-accounts export imports in one
+ * go. Rows without an account number go in a group with last4 "".
+ */
+export function groupRbcRowsByAccount(
+  rows: ParsedCsvTransaction[],
+  detected: RbcDetectedAccount[],
+  accounts: { id: string; account_number_last4: string | null; is_active?: boolean }[]
+): RbcAccountGroup[] {
+  const groups = new Map<string, RbcAccountGroup>();
+  for (const row of rows) {
+    const last4 = row.accountLast4 ?? "";
+    let group = groups.get(last4);
+    if (!group) {
+      const accountType = detected.find((d) => d.last4 === last4)?.accountType ?? "";
+      const match = last4
+        ? accounts.find((a) => a.account_number_last4 === last4)
+        : undefined;
+      group = {
+        last4,
+        accountType,
+        rows: [],
+        accountId: match?.id ?? null,
+        newName: `RBC ${accountType || "Account"}`.trim(),
+        newType: rbcAccountTypeToAppType(accountType),
+      };
+      groups.set(last4, group);
+    }
+    group.rows.push(row);
+  }
+  return [...groups.values()];
+}
