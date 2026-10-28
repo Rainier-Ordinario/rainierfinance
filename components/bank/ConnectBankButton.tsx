@@ -72,9 +72,17 @@ export function ConnectBankButton({
   const { open, ready } = usePlaidLink({
     token,
     onSuccess,
-    onExit: () => {
+    onExit: (err, metadata) => {
       setToken(null);
       setBusy(false);
+      // Plaid's own screen already explained it; keep the code and session
+      // id visible, since Plaid support asks for them.
+      if (err) {
+        toast.error(err.display_message || err.error_message, {
+          description: `${err.error_code} · session ${metadata.link_session_id}`,
+          duration: 20000,
+        });
+      }
     },
   });
 
