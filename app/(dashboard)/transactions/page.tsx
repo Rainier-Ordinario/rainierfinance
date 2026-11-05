@@ -44,10 +44,12 @@ import { ConnectBankButton } from "@/components/bank/ConnectBankButton";
 import { TrendPanel } from "@/components/transactions/TrendPanel";
 import { PossibleRefunds } from "@/components/transactions/PossibleRefunds";
 import { SplitDialog } from "@/components/transactions/SplitDialog";
+import { PeriodPicker } from "@/components/transactions/PeriodPicker";
 import { MerchantSheet } from "@/components/merchants/MerchantSheet";
 import {
   useBulkCategorize,
   useDeleteTransactions,
+  useMarkAsTransfers,
   useTransactions,
   useTransactionsLastUpdated,
   useUnsplitTransaction,
@@ -131,6 +133,7 @@ function TransactionsContent() {
   const categories = useCategories();
   const deleteTxs = useDeleteTransactions();
   const bulkCategorize = useBulkCategorize();
+  const markTransfers = useMarkAsTransfers();
   const learn = useLearnMerchantCategory();
   const banks = usePlaidItems();
   const syncBanks = useSyncBanks();
@@ -249,6 +252,11 @@ function TransactionsContent() {
           <Filter className="size-4" aria-hidden />
           Filters
         </Button>
+        <PeriodPicker
+          dateFrom={filters.dateFrom}
+          dateTo={filters.dateTo}
+          onChange={(range) => setFilters((f) => ({ ...f, ...range }))}
+        />
 
         {selected.size > 0 && (
           <div className="ml-auto flex items-center gap-2">
@@ -284,6 +292,20 @@ function TransactionsContent() {
                 ))}
               </SelectContent>
             </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={markTransfers.isPending}
+              title="Money moved between your own accounts: not spending or income"
+              onClick={() =>
+                markTransfers.mutate([...selected], {
+                  onSuccess: () => setSelected(new Set()),
+                })
+              }
+            >
+              <ArrowLeftRight className="size-4" aria-hidden />
+              Mark as transfer
+            </Button>
             <Button
               variant="destructive"
               size="sm"

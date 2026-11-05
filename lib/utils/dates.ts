@@ -68,3 +68,42 @@ export function daysUntilDayOfMonth(dayOfMonth: number, now = new Date()): numbe
   }
   return differenceInCalendarDays(target, now);
 }
+
+/** A calendar period picked on the transactions page: a whole year or one month of it. */
+export interface CalendarPeriod {
+  year: number;
+  /** 0–11, or null for the whole year. */
+  month: number | null;
+}
+
+/** First and last ISO day of a year, or of one month in it. */
+export function calendarPeriodRange({ year, month }: CalendarPeriod) {
+  const start = month === null ? new Date(year, 0, 1) : new Date(year, month, 1);
+  const end = month === null ? new Date(year, 11, 31) : endOfMonth(start);
+  return { from: toISODate(start), to: toISODate(end) };
+}
+
+/**
+ * The period a from/to filter covers exactly — a whole month or a whole
+ * year — or null for no dates or any other range.
+ */
+export function calendarPeriodOf(from?: string, to?: string): CalendarPeriod | null {
+  if (!from || !to) return null;
+  const start = parseISO(from);
+  const candidates: CalendarPeriod[] = [
+    { year: start.getFullYear(), month: start.getMonth() },
+    { year: start.getFullYear(), month: null },
+  ];
+  return (
+    candidates.find((p) => {
+      const r = calendarPeriodRange(p);
+      return r.from === from && r.to === to;
+    }) ?? null
+  );
+}
+
+/** The month before or after, rolling over the year. */
+export function stepMonth({ year, month }: { year: number; month: number }, by: number) {
+  const d = addMonths(new Date(year, month, 1), by);
+  return { year: d.getFullYear(), month: d.getMonth() };
+}

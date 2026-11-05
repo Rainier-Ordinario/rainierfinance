@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  calendarPeriodOf,
+  calendarPeriodRange,
   currentMonthRange,
+  stepMonth,
   daysUntil,
   daysUntilDayOfMonth,
   formatDaysUntil,
@@ -71,5 +74,24 @@ describe("toISODate / daysUntil", () => {
 
   it("daysUntil counts calendar days", () => {
     expect(daysUntil("2026-07-20", new Date(2026, 6, 15))).toBe(5);
+  });
+});
+
+describe("calendar periods", () => {
+  it("covers a whole month or a whole year", () => {
+    expect(calendarPeriodRange({ year: 2024, month: 1 })).toEqual({ from: "2024-02-01", to: "2024-02-29" });
+    expect(calendarPeriodRange({ year: 2025, month: null })).toEqual({ from: "2025-01-01", to: "2025-12-31" });
+  });
+
+  it("recognizes a filter that is exactly a month or a year", () => {
+    expect(calendarPeriodOf("2026-10-01", "2026-10-31")).toEqual({ year: 2026, month: 9 });
+    expect(calendarPeriodOf("2025-01-01", "2025-12-31")).toEqual({ year: 2025, month: null });
+    expect(calendarPeriodOf("2026-10-05", "2026-10-31")).toBeNull();
+    expect(calendarPeriodOf(undefined, undefined)).toBeNull();
+  });
+
+  it("steps across year boundaries", () => {
+    expect(stepMonth({ year: 2026, month: 0 }, -1)).toEqual({ year: 2025, month: 11 });
+    expect(stepMonth({ year: 2025, month: 11 }, 1)).toEqual({ year: 2026, month: 0 });
   });
 });

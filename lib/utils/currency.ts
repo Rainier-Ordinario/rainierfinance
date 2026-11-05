@@ -24,8 +24,8 @@ export function formatCADSigned(amount: number): string {
 }
 
 /**
- * Display form of a transaction amount. Income is always "+". Expenses are
- * stored negative, so a positive expense is a refund and also shows "+".
+ * Display form of a transaction amount. Income is always "+"; anything
+ * else shows its direction, so refunds and money transferred in show "+".
  */
 export function formatTransactionAmount(
   amount: number,
@@ -33,8 +33,7 @@ export function formatTransactionAmount(
 ): string {
   const abs = cadFormatter.format(Math.abs(amount));
   if (type === "income") return `+${abs}`;
-  if (type === "expense") return amount > 0 ? `+${abs}` : `-${abs}`;
-  return abs;
+  return amount > 0 ? `+${abs}` : `-${abs}`;
 }
 
 export function formatPercent(value: number, decimals = 1): string {

@@ -276,6 +276,53 @@ export function useBulkCategorize() {
 }
 
 /**
+ * Mark rows as transfers between the user's own accounts (e.g. an
+ * e-transfer to yourself at another bank): not spending, not income.
+ * Amounts keep their sign, so money out stays negative.
+ */
+export function useMarkAsTransfers() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("transactions")
+        .update({ type: "transfer", category: "Transfer" })
+        .in("id", ids);
+      if (error) throw error;
+      return ids.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      toast.success(
+        `Marked ${count} ${count === 1 ? "transaction" : "transactions"} as transfers`
+      );
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+/** Every year from the user's oldest transaction to this one, newest first. */
+export function useTransactionYears() {
+  return useQuery({
+    queryKey: ["transactions", "years"],
+    queryFn: async (): Promise<number[]> => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("date")
+        .order("date")
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      const now = new Date().getFullYear();
+      const first = data ? Number(data.date.slice(0, 4)) : now;
+      return Array.from({ length: now - first + 1 }, (_, i) => now - i);
+    },
+  });
+}
+
+/**
  * Reclassify income rows as refunds: positive expenses in the given
  * category, so they lower that category's spending instead of adding income.
  */

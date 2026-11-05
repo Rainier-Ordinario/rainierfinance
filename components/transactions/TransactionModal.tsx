@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Minus, Plus, Undo2 } from "lucide-react";
+import { ArrowLeftRight, Minus, Plus, Undo2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -33,7 +33,9 @@ const schema = z.object({
   amount: z
     .number({ message: "Enter an amount" })
     .positive("Enter an amount above zero"),
-  kind: z.enum(["expense", "income", "refund"]),
+  kind: z.enum(["expense", "income", "refund", "transfer"]),
+  /** Transfers only: money leaving this account, or arriving in it. */
+  direction: z.enum(["out", "in"]),
   description: z.string().min(1, "Required"),
   category: z.string().min(1, "Pick a category"),
   account_id: z.string().min(1, "Pick an account"),
@@ -43,6 +45,9 @@ const schema = z.object({
 });
 
 type FormValues = z.infer<typeof schema>;
+
+/** Categories a transfer can take: plain moves, or funding investments. */
+const TRANSFER_CATEGORIES = ["Transfer", "Investments", "Crypto"];
 
 export function TransactionModal({
   open,
@@ -66,6 +71,7 @@ export function TransactionModal({
     defaultValues: {
       amount: undefined as unknown as number,
       kind: "expense",
+      direction: "out",
       description: "",
       category: "",
       account_id: "",
@@ -83,11 +89,14 @@ export function TransactionModal({
               amount: Math.abs(Number(editing.amount)),
               // Expenses are stored negative; a positive expense is a refund.
               kind:
-                editing.type === "income"
-                  ? "income"
-                  : Number(editing.amount) > 0
-                    ? "refund"
-                    : "expense",
+                editing.type === "transfer"
+                  ? "transfer"
+                  : editing.type === "income"
+                    ? "income"
+                    : Number(editing.amount) > 0
+                      ? "refund"
+                      : "expense",
+              direction: Number(editing.amount) < 0 ? "out" : "in",
               description: editing.description,
               category: editing.category,
               account_id: editing.account_id,
@@ -98,6 +107,7 @@ export function TransactionModal({
           : {
               amount: undefined as unknown as number,
               kind: "expense",
+              direction: "out",
               description: "",
               category: "",
               account_id: accounts[0]?.id ?? "",
@@ -111,23 +121,33 @@ export function TransactionModal({
   }, [open, editing]);
 
   const kind = form.watch("kind");
+  const direction = form.watch("direction");
   // Refunds are money back on spending, so they take spending categories.
-  const isExpense = kind !== "income";
+  const isExpense = kind === "expense" || kind === "refund";
 
-  // "Transfer" isn't addable here, and "Income" only makes sense in income
-  // mode.
-  const visibleCategories = categories.filter(
-    (c) => c.name !== "Transfer" && (!isExpense || c.name !== "Income")
+  // Transfers take only transfer categories; "Transfer" is only for them,
+  // and "Income" only makes sense in income mode.
+  const visibleCategories = categories.filter((c) =>
+    kind === "transfer"
+      ? TRANSFER_CATEGORIES.includes(c.name)
+      : c.name !== "Transfer" && (!isExpense || c.name !== "Income")
   );
 
   function setMode(next: FormValues["kind"]) {
     form.setValue("kind", next);
     const category = form.getValues("category");
-    if (next === "income" && !category) {
+    if (next === "transfer") {
+      if (!TRANSFER_CATEGORIES.includes(category)) form.setValue("category", "Transfer");
+      return;
+    }
+    if (TRANSFER_CATEGORIES.includes(category) && category !== "Investments" && category !== "Crypto") {
+      form.setValue("category", "");
+    }
+    if (next === "income" && !form.getValues("category")) {
       const income = categories.find((c) => c.name === "Income");
       if (income) form.setValue("category", income.name);
     }
-    if (next !== "income" && category === "Income") form.setValue("category", "");
+    if (next !== "income" && form.getValues("category") === "Income") form.setValue("category", "");
   }
 
 
@@ -140,13 +160,23 @@ export function TransactionModal({
     upsert.mutate(
       {
         ...(editing ? { id: editing.id } : {}),
-        // Expenses are stored negative; income and refunds positive.
-        amount: values.kind === "expense" ? -values.amount : values.amount,
+        // Expenses and money sent out are stored negative; income, refunds
+        // and money received positive.
+        amount:
+          values.kind === "expense" ||
+          (values.kind === "transfer" && values.direction === "out")
+            ? -values.amount
+            : values.amount,
         description: values.description,
         category: values.category,
         account_id: values.account_id,
         date: values.date,
-        type: values.kind === "income" ? "income" : "expense",
+        type:
+          values.kind === "income"
+            ? "income"
+            : values.kind === "transfer"
+              ? "transfer"
+              : "expense",
         is_recurring: values.is_recurring,
         notes: values.notes || null,
       },
@@ -173,19 +203,20 @@ export function TransactionModal({
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <div className="flex gap-2" role="group" aria-label="Transaction kind">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Transaction kind">
             {(
               [
                 { value: "expense", label: "Expense", Icon: Minus },
                 { value: "income", label: "Income", Icon: Plus },
                 { value: "refund", label: "Refund", Icon: Undo2 },
+                { value: "transfer", label: "Transfer", Icon: ArrowLeftRight },
               ] as const
             ).map(({ value, label, Icon }) => (
               <Button
                 key={value}
                 type="button"
                 variant={kind === value ? "default" : "outline"}
-                className="flex-1"
+                className="px-2"
                 onClick={() => setMode(value)}
                 aria-pressed={kind === value}
               >
@@ -198,6 +229,35 @@ export function TransactionModal({
               Money back from a purchase. It lowers spending in its category
               instead of counting as income.
             </p>
+          )}
+          {kind === "transfer" && (
+            <div className="-mt-1 space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Money moving between your own accounts, like an e-transfer to
+                yourself at another bank. It doesn&apos;t count as spending or
+                income.
+              </p>
+              <div className="flex gap-2" role="group" aria-label="Transfer direction">
+                {(
+                  [
+                    { value: "out", label: "Sent out of this account" },
+                    { value: "in", label: "Received into it" },
+                  ] as const
+                ).map(({ value, label }) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant={direction === value ? "secondary" : "ghost"}
+                    className="flex-1"
+                    onClick={() => form.setValue("direction", value)}
+                    aria-pressed={direction === value}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            </div>
           )}
 
           <div className="space-y-2">
@@ -227,7 +287,10 @@ export function TransactionModal({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Category</Label>
+              {/* Remounted per kind: the option list changes with it, and the
+                  select only shows a value whose option it has rendered. */}
               <Select
+                key={kind}
                 value={form.watch("category")}
                 onValueChange={(v) => form.setValue("category", v)}
               >
