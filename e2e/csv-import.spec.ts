@@ -40,6 +40,16 @@ test("an all-accounts RBC export splits by account and imports in one go", async
   await expect(page.getByText(/Nothing new to import/)).toBeVisible();
 });
 
+test("RBC's .xls-named CSV downloads are accepted", async ({ page }) => {
+  await page.goto("/transactions");
+  await page.getByRole("button", { name: "Import CSV" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog
+    .locator('input[type="file"]')
+    .setInputFiles({ ...file, name: "csv44484.xls", mimeType: "application/vnd.ms-excel" });
+  await expect(dialog).toContainText("5 transactions across 2 accounts");
+});
+
 test("the import alert opens the importer", async ({ page }) => {
   await page.goto("/transactions?import=1");
   await expect(page.getByRole("dialog", { name: "Import CSV" })).toBeVisible();

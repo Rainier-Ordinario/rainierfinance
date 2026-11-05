@@ -149,14 +149,20 @@ export function CSVImporter({
    * column-mapping step.
    */
   async function handleFiles(files: File[]) {
-    const csvs = files.filter(
-      (f) => f.name.toLowerCase().endsWith(".csv") || f.type === "text/csv"
-    );
+    // RBC names its CSV downloads ".xls", so accept those and check the
+    // contents: a real Excel file is binary and can't be read as text.
+    const csvs = files.filter((f) => /\.(csv|xls|txt)$/i.test(f.name) || f.type === "text/csv");
     if (csvs.length === 0) {
       toast.error("Choose a .csv file");
       return;
     }
     const texts = await Promise.all(csvs.map((f) => f.text()));
+    if (texts.some((t) => t.includes("\u0000"))) {
+      toast.error(
+        "That's an Excel file — download it from your bank as CSV (comma delimited) instead."
+      );
+      return;
+    }
     const headers = texts.map((text) =>
       (Papa.parse<string[]>(text, { skipEmptyLines: true, preview: 1 }).data[0] ?? []).map(String)
     );
@@ -541,7 +547,7 @@ export function CSVImporter({
             <input
               ref={fileInput}
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,.xls,.txt,text/csv"
               multiple
               className="hidden"
               onChange={(e) => {
