@@ -190,10 +190,10 @@ function TransactionsContent() {
             <Button
               variant="ghost"
               onClick={() => setImportOpen(true)}
-              title="For banks that can't be connected, or older history"
+              title="Import RBC CSV exports or PDF statements"
             >
               <Upload className="size-4" aria-hidden />
-              Import CSV
+              Import
             </Button>
             <Button variant="outline" onClick={exportAll} disabled={rows.length === 0}>
               <Download className="size-4" aria-hidden />

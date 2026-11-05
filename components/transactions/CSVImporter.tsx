@@ -28,6 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { parseRbcStatement } from "@/lib/parsers/rbc-statement";
 import {
   groupRbcRowsByAccount,
   parseRbcCsv,
@@ -56,7 +57,7 @@ import { useUpsertSubscription } from "@/lib/hooks/useSubscriptions";
 import { formatCAD } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { toISODate } from "@/lib/utils/dates";
-import { addMonths, parseISO } from "date-fns";
+import { addMonths, format, parseISO } from "date-fns";
 import type { Account, ParsedCsvTransaction } from "@/types";
 
 type ColumnKey = "date" | "description" | "amount" | "ignore";
@@ -91,6 +92,7 @@ export function CSVImporter({
   // RBC files: rows split by account, each matched or to be created.
   const [groups, setGroups] = useState<RbcAccountGroup[]>([]);
   const [dragging, setDragging] = useState(false);
+  const [readingPdfs, setReadingPdfs] = useState(false);
   const [rawGrid, setRawGrid] = useState<string[][]>([]);
   const [mapping, setMapping] = useState<Record<number, ColumnKey>>({});
   const [needsMapping, setNeedsMapping] = useState(false);
@@ -149,11 +151,14 @@ export function CSVImporter({
    * column-mapping step.
    */
   async function handleFiles(files: File[]) {
+    const pdfs = files.filter((f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf");
     // RBC names its CSV downloads ".xls", so accept those and check the
     // contents: a real Excel file is binary and can't be read as text.
-    const csvs = files.filter((f) => /\.(csv|xls|txt)$/i.test(f.name) || f.type === "text/csv");
-    if (csvs.length === 0) {
-      toast.error("Choose a .csv file");
+    const csvs = files.filter(
+      (f) => !pdfs.includes(f) && (/\.(csv|xls|txt)$/i.test(f.name) || f.type === "text/csv")
+    );
+    if (csvs.length === 0 && pdfs.length === 0) {
+      toast.error("Choose a CSV file or an RBC PDF statement");
       return;
     }
     const texts = await Promise.all(csvs.map((f) => f.text()));
@@ -171,16 +176,49 @@ export function CSVImporter({
       const transactions: ParsedCsvTransaction[] = [];
       const detected: RbcDetectedAccount[] = [];
       const errors: string[] = [];
+      const many = csvs.length + pdfs.length > 1;
+      const addAccount = (d: RbcDetectedAccount) => {
+        if (!detected.some((x) => x.last4 === d.last4)) detected.push(d);
+      };
       texts.forEach((text, i) => {
         const parsed = parseRbcCsv(text);
         transactions.push(...parsed.transactions);
-        for (const d of parsed.detectedAccounts) {
-          if (!detected.some((x) => x.last4 === d.last4)) detected.push(d);
-        }
-        errors.push(
-          ...parsed.errors.map((e) => (csvs.length > 1 ? `${csvs[i].name} ${e}` : e))
-        );
+        parsed.detectedAccounts.forEach(addAccount);
+        errors.push(...parsed.errors.map((e) => (many ? `${csvs[i].name} ${e}` : e)));
       });
+      if (pdfs.length > 0) {
+        setReadingPdfs(true);
+        try {
+          const { loadPdfLines } = await import("@/lib/parsers/pdfText");
+          for (const pdf of pdfs) {
+            let statement: ReturnType<typeof parseRbcStatement> = null;
+            try {
+              statement = parseRbcStatement(await loadPdfLines(pdf));
+            } catch (err) {
+              // Unreadable or password-protected PDF: reported below.
+              console.warn("Couldn't read", pdf.name, err);
+            }
+            if (!statement) {
+              errors.push(`${pdf.name}: not an RBC statement this can read`);
+              continue;
+            }
+            transactions.push(...statement.transactions);
+            addAccount(statement.account);
+            errors.push(...statement.errors.map((e) => `${pdf.name}: ${e}`));
+            if (!statement.balanced) {
+              errors.push(
+                `${pdf.name}: rows don't add up to the statement's balance — some may be missing`
+              );
+            }
+          }
+        } finally {
+          setReadingPdfs(false);
+        }
+        if (transactions.length === 0) {
+          toast.error(errors[0] ?? "No transactions found");
+          return;
+        }
+      }
       const classified = classifyRefunds(
         applyMerchantRules(transactions, merchantRules),
         knownMerchants,
@@ -194,9 +232,9 @@ export function CSVImporter({
       return;
     }
 
-    if (csvs.length > 1) {
+    if (csvs.length > 1 || pdfs.length > 0) {
       toast.error(
-        "Only RBC exports can be imported together — add other files one at a time."
+        "Only RBC exports and statements can be imported together — add other files one at a time."
       );
       return;
     }
@@ -384,13 +422,14 @@ export function CSVImporter({
       <>
             {parseErrors.length > 0 && (
               <p className="text-xs text-warning">
-                {parseErrors.length} rows skipped:{" "}
+                {parseErrors.length === 1 ? "1 thing" : `${parseErrors.length} things`}{" "}
+                to check:{" "}
                 {parseErrors.slice(0, 3).join("; ")}
                 {parseErrors.length > 3 && "…"}
               </p>
             )}
 
-            <div className="max-h-72 overflow-y-auto rounded-lg border">
+            <div className="max-h-72 overflow-auto rounded-lg border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -403,8 +442,8 @@ export function CSVImporter({
                 <TableBody>
                   {rows.slice(0, 50).map((r, i) => (
                     <TableRow key={i}>
-                      <TableCell className="text-numeric text-xs">
-                        {r.date}
+                      <TableCell className="text-numeric whitespace-nowrap text-xs">
+                        {format(parseISO(r.date), "MMM d, yyyy")}
                       </TableCell>
                       <TableCell className="max-w-48 truncate text-xs">
                         {r.description}
@@ -450,12 +489,13 @@ export function CSVImporter({
         if (!o) reset();
       }}
     >
-      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[90svh] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Import CSV</DialogTitle>
+          <DialogTitle>Import transactions</DialogTitle>
           <DialogDescription>
-            Drop in RBC exports — one account or all of them — and each row
-            lands in the right account. Other files can be mapped manually.
+            Drop in RBC exports or PDF statements — one account or many — and
+            each row lands in the right account. Other files can be mapped
+            manually.
           </DialogDescription>
         </DialogHeader>
 
@@ -540,14 +580,25 @@ export function CSVImporter({
             )}
           >
             <FileUp className="size-8" aria-hidden />
-            <span className="text-sm">Drop CSV files here, or click to choose</span>
-            <span className="text-xs">
-              Tip: in RBC Online Banking, download &ldquo;All accounts&rdquo; as one CSV
-            </span>
+            {readingPdfs ? (
+              <span className="flex items-center gap-2 text-sm">
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+                Reading statements…
+              </span>
+            ) : (
+              <>
+                <span className="text-sm">
+                  Drop CSV files or RBC PDF statements here, or click to choose
+                </span>
+                <span className="text-xs">
+                  Statements are read on this device and never uploaded
+                </span>
+              </>
+            )}
             <input
               ref={fileInput}
               type="file"
-              accept=".csv,.xls,.txt,text/csv"
+              accept=".csv,.xls,.txt,.pdf,text/csv,application/pdf"
               multiple
               className="hidden"
               onChange={(e) => {
@@ -574,7 +625,7 @@ export function CSVImporter({
                     key={g.last4 || i}
                     className="flex flex-wrap items-center gap-3 px-3 py-2.5"
                   >
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-48 flex-1">
                       {existing ? (
                         <p className="truncate text-sm font-medium">
                           {existing.name}
@@ -595,7 +646,7 @@ export function CSVImporter({
                       )}
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {g.last4 ? `····${g.last4} · ` : ""}
-                        {dates[0]} → {dates[dates.length - 1]}
+                        {dateRange(dates[0], dates[dates.length - 1])}
                       </p>
                     </div>
                     {!existing && (
@@ -603,8 +654,8 @@ export function CSVImporter({
                         New {TYPE_LABELS[g.newType].toLowerCase()} account
                       </Badge>
                     )}
-                    <span className="text-numeric w-16 text-right text-sm">
-                      {g.rows.length} rows
+                    <span className="text-numeric ml-auto w-16 text-right text-sm">
+                      {g.rows.length} {g.rows.length === 1 ? "row" : "rows"}
                     </span>
                   </li>
                 );
@@ -798,6 +849,16 @@ export function CSVImporter({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** "Mar 4, 2024", or "Mar 1 – 31, 2024" style for a span. */
+function dateRange(from: string, to: string): string {
+  const a = parseISO(from);
+  const b = parseISO(to);
+  if (from === to) return format(a, "MMM d, yyyy");
+  if (a.getFullYear() !== b.getFullYear())
+    return `${format(a, "MMM d, yyyy")} – ${format(b, "MMM d, yyyy")}`;
+  return `${format(a, "MMM d")} – ${format(b, "MMM d, yyyy")}`;
 }
 
 function parseLooseDate(raw: string): string | null {

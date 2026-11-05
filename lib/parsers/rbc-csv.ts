@@ -69,6 +69,42 @@ function parseRbcDate(raw: string): string | null {
   return null;
 }
 
+/**
+ * One RBC row, typed the way every RBC import (CSV or PDF statement) does
+ * it. Money moving between the user's own accounts (card payments,
+ * chequing<->savings, funding investment accounts) must be transfers —
+ * typing them income/expense double-counts every internal move.
+ */
+export function rbcTransaction(
+  date: string,
+  description: string,
+  amount: number,
+  last4: string
+): ParsedCsvTransaction {
+  const transferKind = rbcTransferKind(description);
+  const isTransfer = transferKind === "transfer";
+  const isInvestmentFunding = transferKind === "investment";
+  return {
+    date,
+    description,
+    amount,
+    category: isTransfer
+      ? "Transfer"
+      : isInvestmentFunding
+        ? "Investments"
+        : amount > 0
+          ? "Income"
+          : categorizeMerchant(description),
+    type:
+      isTransfer || isInvestmentFunding
+        ? "transfer"
+        : amount > 0
+          ? "income"
+          : "expense",
+    accountLast4: last4 || undefined,
+  };
+}
+
 export function parseRbcCsv(csvText: string): RbcParseResult {
   const { data, errors: papaErrors } = Papa.parse<Record<string, string>>(
     csvText,
@@ -76,7 +112,9 @@ export function parseRbcCsv(csvText: string): RbcParseResult {
   );
 
   const transactions: ParsedCsvTransaction[] = [];
-  const errors: string[] = papaErrors.map(
+  // RBC's ".xls" download ends rows with an extra comma; the row itself
+  // parses fine, so that one isn't worth reporting.
+  const errors: string[] = papaErrors.filter((e) => e.code !== "TooManyFields").map(
     (e) => `Row ${e.row ?? "?"}: ${e.message}`
   );
   const detectedMap = new Map<string, RbcDetectedAccount>();
@@ -109,32 +147,7 @@ export function parseRbcCsv(csvText: string): RbcParseResult {
       });
     }
 
-    // Money moving between the user's own accounts (card payments,
-    // chequing<->savings, funding investment accounts) must be transfers —
-    // typing them income/expense double-counts every internal move.
-    const transferKind = rbcTransferKind(description);
-    const isTransfer = transferKind === "transfer";
-    const isInvestmentFunding = transferKind === "investment";
-
-    transactions.push({
-      date,
-      description,
-      amount,
-      category: isTransfer
-        ? "Transfer"
-        : isInvestmentFunding
-          ? "Investments"
-          : amount > 0
-            ? "Income"
-            : categorizeMerchant(description),
-      type:
-        isTransfer || isInvestmentFunding
-          ? "transfer"
-          : amount > 0
-            ? "income"
-            : "expense",
-      accountLast4: last4 || undefined,
-    });
+    transactions.push(rbcTransaction(date, description, amount, last4));
   });
 
   return { transactions, errors, detectedAccounts: [...detectedMap.values()] };

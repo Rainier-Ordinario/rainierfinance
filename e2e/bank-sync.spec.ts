@@ -13,5 +13,5 @@ test("bank connections explain what's needed before Plaid keys are added", async
 test("transactions offer bank sync, with CSV import kept as a fallback", async ({ page }) => {
   await page.goto("/transactions");
   await expect(page.getByRole("button", { name: /Connect bank|Sync/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Import CSV" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Import", exact: true })).toBeVisible();
 });
