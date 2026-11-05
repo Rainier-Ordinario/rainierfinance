@@ -10,6 +10,48 @@ const row = (amount: number, extra = {}) => ({
 });
 
 describe("dedupeImport", () => {
+  it("recognizes the same transaction in RBC's other download format", () => {
+    const existing = [
+      row(-18.89, { description: "JOES PIZZA VANCOUVER" }),
+      row(3, { description: "E-TRANSFER RECEIVED JANE DOE CA1234AB" }),
+      row(-4065.4, { description: "ONLINE TRANSFER TO DEPOSIT ACCOUNT-1111" }),
+      row(0.48, { description: "BONUS DEPOSIT INTEREST" }),
+      row(-1000, { description: "E-TRANSFER REQUEST FULFILLED EXAMPLE EXCHANGE INC." }),
+    ];
+    const { toInsert, skipped } = dedupeImport(
+      [
+        row(-18.89, { description: "JOES PIZZA VANCOUVER BC" }),
+        row(3, { description: "Email Trfs E-TRANSFER RECEIVED" }),
+        row(-4065.4, { description: "WWW TRF DDA - 1111" }),
+        row(0.48, { description: "BONUS DEP INT" }),
+        row(-1000, { description: "E-TRF REQFUL" }),
+      ],
+      existing
+    );
+    expect(skipped).toBe(5);
+    expect(toInsert).toEqual([]);
+  });
+
+  it("keeps a different purchase with the same day and amount", () => {
+    const { toInsert } = dedupeImport(
+      [row(-5, { description: "COFFEE SHOP #12" })],
+      [row(-5, { description: "STARBUCKS #1234" })]
+    );
+    expect(toInsert).toHaveLength(1);
+  });
+
+  it("matches each existing row only once across formats", () => {
+    const { toInsert, skipped } = dedupeImport(
+      [
+        row(-15.25, { description: "CAMPUS GRILL BURNABY BC" }),
+        row(-15.25, { description: "CAMPUS GRILL BURNABY BC" }),
+      ],
+      [row(-15.25, { description: "CAMPUS GRILL BURNABY" })]
+    );
+    expect(skipped).toBe(1);
+    expect(toInsert).toHaveLength(1);
+  });
+
   it("skips rows already imported, counting occurrences", () => {
     const { toInsert, skipped } = dedupeImport(
       [row(-50), row(-50), row(-20)],
